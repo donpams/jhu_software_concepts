@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Contact - {{ profile.name }}{% endblock %}
+
+{% block content %}
+<section class="card">
+    <h1>Contact</h1>
+    <p>Feel free to reach out through any of the links below.</p>
+
+    <ul class="contact-list">
+        <li>
+            <strong>Email:</strong>
+            <a href="mailto:{{ profile.email }}">{{ profile.email }}</a>
+        </li>
+        <li>
+            <strong>LinkedIn:</strong>
+            <a href="{{ profile.linkedin }}" target="_blank">{{ profile.linkedin }}</a>
+        </li>
+        <li>
+            <strong>GitHub:</strong>
+            <a href="{{ profile.github }}" target="_blank">{{ profile.github }}</a>
+        </li>
+    </ul>
+</section>
+{% endblock %}

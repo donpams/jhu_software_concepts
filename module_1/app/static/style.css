@@ -1,0 +1,146 @@
+/* ------------------------------------------------------------------
+   style.css - site-wide styling for the personal website
+   ------------------------------------------------------------------ */
+
+/* Basic page setup */
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #f4f6f9;   /* light grey page background */
+    color: #222;
+    line-height: 1.6;
+}
+
+/* ---------- Header + navigation bar ---------- */
+
+/* Header bar is colorized (dark blue) so it stands out from the page */
+.site-header {
+    display: flex;
+    justify-content: space-between;  /* title on the left, nav on the right */
+    align-items: center;
+    background-color: #1f3a5f;
+    padding: 15px 40px;
+}
+
+.site-title {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+/* Navigation links sit in the top right corner */
+.navbar a {
+    color: #ffffff;
+    text-decoration: none;
+    padding: 10px 18px;
+    margin-left: 5px;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+.navbar a:hover {
+    background-color: #2f5a8f;
+}
+
+/* The current tab is highlighted with a bright color */
+.navbar a.active {
+    background-color: #f5a623;
+    color: #1f3a5f;
+    font-weight: bold;
+}
+
+/* ---------- Main content area ---------- */
+
+.content {
+    max-width: 1000px;
+    margin: 40px auto;
+    padding: 0 20px;
+}
+
+h1 {
+    color: #1f3a5f;
+    margin-bottom: 5px;
+}
+
+h2 {
+    color: #555;
+    font-weight: normal;
+    font-size: 20px;
+    margin-top: 0;
+}
+
+/* Home page: bio on the left, photo on the right */
+.home-grid {
+    display: flex;
+    align-items: flex-start;
+    gap: 40px;
+}
+
+.bio {
+    flex: 2;
+}
+
+.photo {
+    flex: 1;
+    text-align: center;
+}
+
+.photo img {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* White "card" boxes used on the contact and projects pages */
+.card {
+    background-color: #ffffff;
+    padding: 25px 30px;
+    margin-bottom: 25px;
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.card h2 {
+    color: #1f3a5f;
+    font-weight: bold;
+}
+
+/* Contact page list */
+.contact-list {
+    list-style: none;
+    padding: 0;
+}
+
+.contact-list li {
+    margin: 12px 0;
+    font-size: 17px;
+}
+
+a {
+    color: #1f3a5f;
+}
+
+/* Button-style link used for the GitHub link on the projects page */
+.button {
+    display: inline-block;
+    background-color: #1f3a5f;
+    color: #ffffff;
+    padding: 10px 18px;
+    border-radius: 5px;
+    text-decoration: none;
+}
+
+.button:hover {
+    background-color: #f5a623;
+    color: #1f3a5f;
+}
+
+/* ---------- Footer ---------- */
+
+.site-footer {
+    text-align: center;
+    color: #777;
+    font-size: 14px;
+    padding: 20px;
+}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Home - {{ profile.name }}{% endblock %}
+
+{% block content %}
+<!-- Two-column layout: bio text on the left, picture on the right -->
+<section class="home-grid">
+
+    <div class="bio">
+        <h1>{{ profile.name }}</h1>
+        <h2>{{ profile.position }}</h2>
+        <p>{{ profile.bio }}</p>
+        <p>{{ profile.bio_2 }}</p>
+    </div>
+
+    <div class="photo">
+        <img src="{{ url_for('static', filename='images/profile.jpg') }}"
+             alt="Photo of {{ profile.name }}">
+    </div>
+
+</section>
+{% endblock %}

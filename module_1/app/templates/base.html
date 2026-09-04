@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Each page fills in its own title -->
+    <title>{% block title %}{{ profile.name }}{% endblock %}</title>
+    <!-- Site-wide style sheet from the static folder -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header with the site name on the left and the navigation bar on the right -->
+    <header class="site-header">
+        <div class="site-title">{{ profile.name }}</div>
+
+        <!-- Navigation bar: the 'active' class highlights the current tab -->
+        <nav class="navbar">
+            <a href="{{ url_for('pages.home') }}"
+               class="{% if active_page == 'home' %}active{% endif %}">Home</a>
+            <a href="{{ url_for('pages.contact') }}"
+               class="{% if active_page == 'contact' %}active{% endif %}">Contact</a>
+            <a href="{{ url_for('pages.projects') }}"
+               class="{% if active_page == 'projects' %}active{% endif %}">Projects</a>
+        </nav>
+    </header>
+
+    <!-- Page-specific content goes here -->
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        &copy; 2026 {{ profile.name }}
+    </footer>
+
+</body>
+</html>
