@@ -1,8 +1,8 @@
 # Module 2 – Web Scraping: Grad Cafe Admissions Data
 
-**Name:** Pammi (JHED ID: `<JHED ID>`)
+**Name:** Pammi (JHED ID: `gemefie1`)
 **Module:** Module 2 – Web Scraping Assignment
-**Due:** `<due date>`
+**Due:** `September 13th 2026`
 
 ## Contents of `module_2/`
 
@@ -10,7 +10,7 @@
 |---|---|
 | `scrape.py` | `GradCafeScraper` class – URL management (urllib), page rendering (Selenium attached to a user-opened Chrome), parsing (BeautifulSoup / string methods / regex), resumable JSON persistence (`scrape_data`, `save_data`, `load_data`). |
 | `clean.py` | `clean_data()` field-level cleaning, plus `standardize_with_llm()` which drives the instructor's local-LLM standardizer in parallel and writes `llm_extend_applicant_data.json`. |
-| `applicant_data.json` | Raw-but-structured scrape output (≥ 30,000 entries). |
+| `applicant_data.json` | Raw-but-structured scrape output (50,000 entries, 2,500 pages). |
 | `cleaned_applicant_data.json` | Output of `clean_data()` (same rows, normalized values). |
 | `llm_extend_applicant_data.json` | Cleaned rows + `llm-generated-program` / `llm-generated-university`. |
 | `llm_hosting/` | Instructor-provided TinyLlama standardizer (with the small edits listed below). |
@@ -109,17 +109,37 @@ After every page the full record list is re-written atomically (`save_data` writ
 
 #### Edits made to the provided `llm_hosting/app.py`
 
-* `hf_hub_download(...)`: removed the `local_dir_use_symlinks` and `force_filename` arguments (they were dropped from `huggingface_hub` ≥ 0.26 and raise `TypeError`); the model is cached in `llm_hosting/models/` relative to the script.
+All edits are marked with a `module_2 edit` comment in the file. None of them touch the prompt, the few-shots or the model settings.
+
+* `hf_hub_download(...)`: removed the `local_dir_use_symlinks` and `force_filename` arguments (dropped from `huggingface_hub` ≥ 0.26, they raise `TypeError`); the model is cached in `llm_hosting/models/` relative to the script.
 * `canon_universities.txt` / `canon_programs.txt` are resolved relative to `app.py` rather than the current working directory, so `clean.py` can launch it from the parent folder.
-* No changes to the prompt, few-shots, fuzzy-matching thresholds or the canonical lists themselves unless listed in the *Canonical list changes* section below.
+* `_fix_title_case()` replaces bare `str.title()` so connector words stay lower-case (`"Master Of Arts In Teaching"` → `"Master of Arts in Teaching"`); used for both programs and universities.
+* `_post_normalize_university()`: (a) a trailing parenthetical is stripped before canonical lookup (`"Washington University in St. Louis (WashU/WUSTL)"`); (b) the difflib cutoff was raised from 0.86 to 0.90; (c) a new `_plausible_match()` guard rejects a fuzzy match unless every distinguishing word of the input has a close counterpart in the candidate. Without (b)+(c) difflib mapped `University of Michigan` → `University of Milan` (ratio 0.878), `Penn State University` → `Kent State University` (0.905), `University of Maryland` → `University of Mary` (0.90) and `University of North Carolina` → `University of South Carolina`.
+* `COMMON_UNI_FIXES` gained the most frequent Grad Cafe short forms: `Penn State`, `UNC`, `UNC Chapel Hill`, `UCLA`, `UCSD`, `UC Berkeley/Davis/Irvine/San Diego`, `UT Austin`, `NYU`, `MIT`, `CMU`, `WashU`, `WUSTL`. (The fixes are applied *after* title-casing so the keys match.)
 
 #### Canonical list changes
 
-`<fill in after reviewing the output – e.g. added "Johns Hopkins University" variants, fixed X>`
+`canon_universities.txt` (was 1,060 lines with ~80 case-insensitive duplicates; now 985 unique lines):
 
-#### Systematic edge cases observed
+* De-duplicated case-insensitively and given a trailing newline (the original file had none, so an appended entry silently merged with the last line — `"Concord UniversityUniversity of Michigan"`).
+* Added: University of Michigan; University of Maryland; University of North Carolina; University of Minnesota; University of Washington; University of Illinois Chicago; University of Wisconsin–Madison; University of Colorado Boulder; University of Maryland, College Park; Ohio State University; Pennsylvania State University; Georgia Institute of Technology; University of Pittsburgh; Johns Hopkins University; Woods Hole Oceanographic Institution; University of Texas Health Science Center. These are all among the most frequent names in the scraped data that had no exact canonical entry (only a campus-qualified variant such as "University of Michigan, Ann Arbor"), which is what pushed them into the fuzzy matcher.
 
-`<fill in after reviewing llm_extend_applicant_data.json – e.g. non-English university names, program strings that contain the degree, "Unknown" universities, Title-Case artefacts such as "Upf">`
+`canon_programs.txt`: unchanged.
+
+#### Post-processing added in `clean.py` (`_refine_standardized`)
+
+Grad Cafe's current page layout already shows the university in its own column, so the scraped `university` field is a more trustworthy starting point than the LLM's split of the combined `program` string. After the LLM pass, each row's scraped university is run through the (updated) `_post_normalize_university()`; when that lands **exactly** on a canonical name it replaces the LLM's answer, otherwise the LLM's answer is kept. Both standardized fields also get the connector-word fix. This corrected 1,900 university values and 5,200 program values in the 50,000-row output without re-running the model (the per-string LLM answers are cached in `llm_work/*.jsonl`, so `python clean.py --llm` re-applies the post-processing in seconds).
+
+#### Systematic edge cases observed (50,000 rows, 17,325 unique program strings)
+
+* **Fuzzy matching to the wrong institution** was the biggest systematic error (≈ 1,100 rows): any frequent name that was missing from the canon list but close in spelling to another canon entry got silently re-labelled (Michigan → Milan, Penn State → Kent State, Maryland → Mary). Fixed via the canon additions and the plausibility guard above; the remaining known cases are single rows (`University of Guilan` and the truncated `University of Michi` still map to `University of Milan`).
+* **LLM hallucinations**: TinyLlama occasionally invents a university (`Princeton University` → `University of Prince-Tonon`, 8 rows) or returns the abbreviation as the name (`Washu/Wustl`, 29 rows). Caught by the scraped-field cross-check.
+* **Campus variants remain separate**: `University of Michigan` (547) and `University of Michigan, Ann Arbor` (661) are both canonical and are kept distinct because the applicants wrote them differently; merging them is an analysis decision, not a cleaning one. Likewise `Medical University of South Carolina` (31 rows) is fuzzy-mapped to `University of South Carolina`.
+* **Title-Case artefacts** from `str.title()`: connector words (`Of`, `And`, `In`, `At`) and acronyms in parentheses (`(Saic)`, `(Upf)`) — the former is fixed, the latter is not.
+* **Program strings that include the degree** (`"PhD Economics"`, `"Masters in Data Science"`) — 92 rows still carry a degree word in `llm-generated-program`; the separate `Degree` field is the reliable source.
+* **Non-English institutions** (e.g. `Friedrich-Schiller Universität Jena`, `Universitat Pompeu Fabra`) are not in the canon list and pass through title-cased; ~1,700 distinct university strings (≈ 6,100 rows) are still not canonical.
+* `Unknown` university: 2 rows after post-processing (7 before).
+* Missing values are simply absent on the site, not parse failures: comments 52 %, GPA 41 %, GRE 92 %, GRE V 94 %, GRE AW 94 %, nationality 2.4 %; `term`, `status`, `decision_date`, `url` are present on every row.
 
 ## Setup and run instructions
 

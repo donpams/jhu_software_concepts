@@ -59,6 +59,23 @@ ABBREV_UNI: Dict[str, str] = {
 }
 
 COMMON_UNI_FIXES: Dict[str, str] = {
+    # module_2 edits: frequent Grad Cafe spellings that fuzzy matching got wrong
+    "Penn State University": "Pennsylvania State University",
+    "Penn State": "Pennsylvania State University",
+    "Unc Chapel Hill": "University of North Carolina at Chapel Hill",
+    "Unc": "University of North Carolina",
+    "Ucla": "University of California, Los Angeles",
+    "Ucsd": "University of California, San Diego",
+    "Uc Berkeley": "University of California, Berkeley",
+    "Uc Davis": "University of California, Davis",
+    "Uc Irvine": "University of California, Irvine",
+    "Uc San Diego": "University of California, San Diego",
+    "Ut Austin": "University of Texas at Austin",
+    "Nyu": "New York University",
+    "Mit": "Massachusetts Institute of Technology",
+    "Cmu": "Carnegie Mellon University",
+    "Washu": "Washington University in St. Louis",
+    "Wustl": "Washington University in St. Louis",
     "McGiill University": "McGill University",
     "Mcgill University": "McGill University",
     # Normalize 'Of' → 'of'
@@ -175,15 +192,47 @@ def _best_match(name: str, candidates: List[str], cutoff: float = 0.86) -> str |
     return matches[0] if matches else None
 
 
+# module_2 edit: words that stay lower-case inside a Title-Cased name
+_SMALL_WORDS = {"of", "and", "in", "at", "for", "the", "on", "to", "with", "de", "du", "des", "et"}
+
+
+def _fix_title_case(name: str) -> str:
+    """Title Case, but keep small connector words lower-case ("Master of Arts")."""
+    words = name.title().split(" ")
+    return " ".join(
+        w.lower() if (i > 0 and w.lower() in _SMALL_WORDS) else w
+        for i, w in enumerate(words)
+    )
+
+
 def _post_normalize_program(prog: str) -> str:
     """Apply common fixes, title case, then canonical/fuzzy mapping."""
     p = (prog or "").strip()
     p = COMMON_PROG_FIXES.get(p, p)
-    p = p.title()
+    p = _fix_title_case(p)  # module_2 edit: was p.title() -> "Master Of Arts"
     if p in CANON_PROGS:
         return p
     match = _best_match(p, CANON_PROGS, cutoff=0.84)
     return match or p
+
+
+_GENERIC_WORDS = {"university", "of", "the", "at", "in", "college", "institute", "state", "and"}
+
+
+def _plausible_match(name: str, candidate: str) -> bool:
+    """module_2 edit: guard against difflib matching the wrong institution.
+
+    Every distinguishing word of ``name`` (e.g. "Penn", "Maryland", "North")
+    must have a close counterpart in ``candidate``; otherwise the overall
+    string similarity is coincidental ("Penn State University" vs
+    "Kent State University" scores 0.905 but shares no real name).
+    """
+    words = [w for w in re.findall(r"[A-Za-z]+", name) if w.lower() not in _GENERIC_WORDS]
+    cand_words = re.findall(r"[A-Za-z]+", candidate)
+    for word in words:
+        if not any(difflib.SequenceMatcher(None, word.lower(), c.lower()).ratio() >= 0.8 for c in cand_words):
+            return False
+    return True
 
 
 def _post_normalize_university(uni: str) -> str:
@@ -196,17 +245,26 @@ def _post_normalize_university(uni: str) -> str:
             u = full
             break
 
-    # Common spelling fixes
-    u = COMMON_UNI_FIXES.get(u, u)
-
-    # Normalize 'Of' → 'of'
+    # Normalize 'Of' -> 'of' etc.
     if u:
-        u = re.sub(r"\bOf\b", "of", u.title())
+        u = _fix_title_case(u)  # module_2 edit: also lower-cases "At", "In", ...
+
+    # Common spelling fixes (applied after title-casing so keys match)
+    u = COMMON_UNI_FIXES.get(u, u)
 
     # Canonical or fuzzy map
     if u in CANON_UNIS:
         return u
-    match = _best_match(u, CANON_UNIS, cutoff=0.86)
+    # module_2 edit: retry without a trailing parenthetical, e.g.
+    # "Washington University in St. Louis (Washu/Wustl)"
+    bare = re.sub(r"\s*\([^)]*\)\s*$", "", u).strip()
+    if bare and bare in CANON_UNIS:
+        return bare
+    # module_2 edit: cutoff raised 0.86 -> 0.90 after "University of Michigan"
+    # was fuzzy-matched to "University of Milan" (ratio 0.878).
+    match = _best_match(u, CANON_UNIS, cutoff=0.90) or _best_match(bare, CANON_UNIS, cutoff=0.90)
+    if match and not _plausible_match(bare or u, match):
+        match = None  # e.g. "Penn State" ~ "Kent State", "Maryland" ~ "Mary"
     return match or u or "Unknown"
 
 

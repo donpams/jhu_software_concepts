@@ -165,17 +165,55 @@ def clean_data(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _run_worker(chunk_path: Path, out_path: Path, python: str) -> None:
     """Run llm_hosting/app.py on one chunk (resumes if the chunk is done)."""
+    rows = json.loads(chunk_path.read_text(encoding="utf-8"))
+    command = [python, "app.py", "--file", str(chunk_path.resolve()), "--out", str(out_path.resolve())]
     if out_path.exists():
-        done = sum(1 for _ in open(out_path, encoding="utf-8"))
-        total = len(json.loads(chunk_path.read_text(encoding="utf-8")))
-        if done >= total:
+        # Resume: keep the finished lines and only send the remaining rows
+        # (app.py --append keeps writing to the same JSONL file).
+        with open(out_path, encoding="utf-8") as fh:
+            done = sum(1 for line in fh if line.strip())
+        if done >= len(rows):
             return
-        out_path.unlink()  # partial output: redo the chunk from scratch
-    subprocess.run(
-        [python, "app.py", "--file", str(chunk_path.resolve()), "--out", str(out_path.resolve())],
-        cwd=LLM_DIR,
-        check=True,
-    )
+        remaining_path = chunk_path.with_name(chunk_path.stem + "_remaining.json")
+        remaining_path.write_text(json.dumps(rows[done:], ensure_ascii=False), encoding="utf-8")
+        command = [python, "app.py", "--file", str(remaining_path.resolve()),
+                   "--out", str(out_path.resolve()), "--append"]
+    subprocess.run(command, cwd=LLM_DIR, check=True)
+
+
+_CAPITAL_SMALL_WORD_RE = re.compile(r"(?<=\S )\b(Of|And|In|At|For|The|On|To|With)\b")
+
+
+def _refine_standardized(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Post-process the LLM output using the site's own university field.
+
+    Grad Cafe's current layout lists the university in its own column, so the
+    scraped ``university`` value is a more reliable starting point than the
+    LLM's split of the combined ``program`` string.  When the scraped name,
+    run through app.py's canonical/fuzzy normalizer (with the updated canon
+    list), lands exactly on a canonical university we prefer it; otherwise
+    the LLM's answer is kept.  This caught e.g. "University of Michigan" ->
+    "University of Milan" and "Princeton University" -> "University of
+    Prince-Tonon" without re-running the model.  Title-case artefacts such as
+    "Master Of Arts" are also fixed in both standardized fields.
+    """
+    sys.path.insert(0, str(LLM_DIR))
+    try:
+        import app as standardizer  # noqa: WPS433 (instructor's llm_hosting/app.py)
+    except ImportError:
+        return row
+
+    llm_uni = row.get("llm-generated-university") or ""
+    scraped_uni = row.get("university") or ""
+    if scraped_uni:
+        candidate = standardizer._post_normalize_university(scraped_uni)
+        if candidate in standardizer.CANON_UNIS and candidate != llm_uni:
+            row["llm-generated-university"] = candidate
+    for key in ("llm-generated-program", "llm-generated-university"):
+        value = row.get(key)
+        if value:
+            row[key] = _CAPITAL_SMALL_WORD_RE.sub(lambda m: m.group(1).lower(), value)
+    return row
 
 
 def standardize_with_llm(
@@ -224,9 +262,10 @@ def standardize_with_llm(
     extended = []
     for record in cleaned:
         result = lookup.get((record.get("program") or "").strip(), {})
-        extended.append({**record,
-                         "llm-generated-program": result.get("llm-generated-program"),
-                         "llm-generated-university": result.get("llm-generated-university")})
+        row = {**record,
+               "llm-generated-program": result.get("llm-generated-program"),
+               "llm-generated-university": result.get("llm-generated-university")}
+        extended.append(_refine_standardized(row))
     save_data(extended, output)
     print(f"wrote {len(extended)} rows to {output}")
     return extended

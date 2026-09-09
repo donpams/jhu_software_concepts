@@ -51,7 +51,6 @@ University of Dallas
 Baylor University
 Southern Methodist University
 Texas Christian University
-
 University of California, Berkeley
 University of California, Los Angeles
 University of California, San Diego
@@ -62,14 +61,12 @@ University of California, Santa Cruz
 University of California, Riverside
 University of California, Merced
 University of California, San Francisco
-
 San Diego State University
 San José State University
 San Francisco State University
 California Polytechnic State University, San Luis Obispo
 California State University, Fullerton
 California State University, Long Beach
-
 University of Michigan, Ann Arbor
 Michigan State University
 Ohio State University
@@ -170,7 +167,6 @@ Kansas State University
 Oklahoma State University
 University of Missouri–Kansas City
 University of Missouri–St. Louis
-
 McGill University
 University of Toronto
 University of British Columbia
@@ -209,7 +205,6 @@ University of Prince Edward Island
 Saint Mary’s University
 Bishop’s University
 Trent University
-
 University of Oxford
 University of Cambridge
 Imperial College London
@@ -255,7 +250,6 @@ Birkbeck, University of London
 Goldsmiths, University of London
 Royal Holloway, University of London
 Brunel University London
-
 Université PSL
 Sorbonne University
 Université Paris-Saclay
@@ -265,7 +259,6 @@ Université Grenoble Alpes
 Université de Montpellier
 HEC Paris
 INSA Lyon
-
 Technical University of Munich
 Ludwig Maximilian University of Munich
 Heidelberg University
@@ -281,7 +274,6 @@ University of Hamburg
 Technical University of Berlin
 University of Stuttgart
 University of Göttingen
-
 Delft University of Technology
 Eindhoven University of Technology
 University of Amsterdam
@@ -294,7 +286,6 @@ Radboud University
 Tilburg University
 Maastricht University
 University of Twente
-
 ETH Zurich
 EPFL
 University of Zurich
@@ -303,7 +294,6 @@ University of Basel
 University of Bern
 University of Lausanne
 University of St. Gallen
-
 University of Copenhagen
 Technical University of Denmark
 Aarhus University
@@ -319,7 +309,6 @@ Chalmers University of Technology
 Aalto University
 University of Helsinki
 Tampere University
-
 University of Barcelona
 Autonomous University of Barcelona
 Polytechnic University of Catalonia
@@ -331,7 +320,6 @@ Pompeu Fabra University
 University of Granada
 University of Seville
 University of Zaragoza
-
 University of Bologna
 Sapienza University of Rome
 University of Milan
@@ -343,33 +331,28 @@ University of Turin
 University of Trento
 Scuola Normale Superiore di Pisa
 Sant’Anna School of Advanced Studies
-
 KU Leuven
 Ghent University
 University of Antwerp
 Université catholique de Louvain
 Université libre de Bruxelles
 Vrije Universiteit Brussel
-
 University of Vienna
 TU Wien
 Graz University of Technology
 University of Innsbruck
 Johannes Kepler University Linz
-
 Trinity College Dublin
 University College Dublin
 University College Cork
 University of Galway
 Dublin City University
 Maynooth University
-
 University of Lisbon
 NOVA University Lisbon
 University of Porto
 University of Coimbra
 University of Minho
-
 Australian National University
 University of Melbourne
 University of Sydney
@@ -390,14 +373,12 @@ La Trobe University
 Curtin University
 University of Tasmania
 Swinburne University of Technology
-
 University of Auckland
 University of Otago
 Victoria University of Wellington
 University of Canterbury
 Massey University
 Auckland University of Technology
-
 Tsinghua University
 Peking University
 Zhejiang University
@@ -414,17 +395,14 @@ Beijing Institute of Technology
 Southern University of Science and Technology
 Tongji University
 Renmin University of China
-
 The University of Hong Kong
 The Chinese University of Hong Kong
 The Hong Kong University of Science and Technology
 City University of Hong Kong
 Hong Kong Polytechnic University
-
 National University of Singapore
 Nanyang Technological University
 Singapore Management University
-
 University of Tokyo
 Kyoto University
 Osaka University
@@ -438,7 +416,6 @@ Keio University
 Kobe University
 University of Tsukuba
 Ritsumeikan University
-
 Seoul National University
 Korea University
 Yonsei University
@@ -446,7 +423,6 @@ KAIST
 POSTECH
 Sungkyunkwan University
 Hanyang University
-
 Indian Institute of Science
 Indian Institute of Technology Bombay
 Indian Institute of Technology Delhi
@@ -460,51 +436,41 @@ Indian Institute of Technology (BHU) Varanasi
 University of Delhi
 Jawaharlal Nehru University
 Indian Statistical Institute
-
 National Taiwan University
 National Tsing Hua University
 National Yang Ming Chiao Tung University
 National Cheng Kung University
 National Taiwan University of Science and Technology
-
 Chulalongkorn University
 Mahidol University
 King Mongkut’s University of Technology Thonburi
-
 Universiti Malaya
 Universiti Putra Malaysia
 Universiti Kebangsaan Malaysia
-
 Universitas Indonesia
 Institut Teknologi Bandung
-
 University of the Philippines
 Vietnam National University, Hanoi
 Vietnam National University, Ho Chi Minh City
-
 Lahore University of Management Sciences
 University of the Punjab
 Bangladesh University of Engineering and Technology
 University of Colombo
-
 Technion – Israel Institute of Technology
 Hebrew University of Jerusalem
 Tel Aviv University
 Weizmann Institute of Science
 Ben-Gurion University of the Negev
-
 Boğaziçi University
 Middle East Technical University
 Istanbul Technical University
 Koç University
 Sabancı University
-
 Khalifa University
 King Abdullah University of Science and Technology
 King Saud University
 University of Tehran
 Sharif University of Technology
-
 University of Cape Town
 University of the Witwatersrand
 Stellenbosch University
@@ -515,7 +481,6 @@ American University in Cairo
 Cairo University
 University of Lagos
 University of Ibadan
-
 National Autonomous University of Mexico
 Tecnológico de Monterrey
 CINVESTAV
@@ -528,7 +493,6 @@ Pontificia Universidad Católica de Chile
 University of Chile
 Universidad de los Andes (Colombia)
 Pontificia Universidad Católica del Perú
-
 University of Alabama at Birmingham
 University of Alabama in Huntsville
 University of South Alabama
@@ -539,13 +503,11 @@ Alabama State University
 Jacksonville State University
 University of North Alabama
 University of West Alabama
-
 Northern Arizona University
 Grand Canyon University
 Embry-Riddle Aeronautical University–Prescott
 Prescott College
 University of Advancing Technology
-
 University of Arkansas at Little Rock
 University of Arkansas for Medical Sciences
 Arkansas State University
@@ -555,7 +517,6 @@ Southern Arkansas University
 Henderson State University
 Ouachita Baptist University
 Harding University
-
 California State Polytechnic University, Pomona
 California State University, Chico
 California State University, Sacramento
@@ -594,7 +555,6 @@ Fielding Graduate University
 Pacific Oaks College
 California Institute of Integral Studies
 UC Law San Francisco
-
 University of Colorado Denver
 University of Colorado Colorado Springs
 Colorado School of Mines
@@ -605,7 +565,6 @@ Colorado Christian University
 Colorado State University Pueblo
 Adams State University
 Western Colorado University
-
 University of Hartford
 Quinnipiac University
 Fairfield University
@@ -616,14 +575,11 @@ Western Connecticut State University
 Eastern Connecticut State University
 University of New Haven
 Goodwin University
-
 Catholic University of America
 University of the District of Columbia
 Gallaudet University
-
 Delaware State University
 Wilmington University
-
 Florida Atlantic University
 Florida International University
 Florida Gulf Coast University
@@ -638,7 +594,6 @@ Florida Institute of Technology
 Rollins College
 Lynn University
 Palm Beach Atlantic University
-
 Georgia State University
 Kennesaw State University
 Georgia Southern University
@@ -652,14 +607,11 @@ Savannah College of Art and Design
 Columbus State University
 Middle Georgia State University
 Clayton State University
-
 University of Hawaiʻi at Hilo
 Hawaiʻi Pacific University
 Chaminade University of Honolulu
-
 Idaho State University
 Northwest Nazarene University
-
 DePaul University
 Loyola University Chicago
 Illinois State University
@@ -688,7 +640,6 @@ Grand Valley State University
 Saginaw Valley State University
 Michigan Technological University
 Calvin University
-
 Ball State University
 Purdue University Fort Wayne
 Purdue University Northwest
@@ -698,17 +649,14 @@ Valparaiso University
 University of Indianapolis
 Indiana State University
 Marian University (Indiana)
-
 University of Northern Iowa
 Drake University
 Des Moines University
-
 Wichita State University
 Emporia State University
 Fort Hays State University
 Pittsburg State University
 Washburn University
-
 Eastern Kentucky University
 Western Kentucky University
 Northern Kentucky University
@@ -716,7 +664,6 @@ Morehead State University
 Murray State University
 Bellarmine University
 University of the Cumberlands
-
 University of New Orleans
 Louisiana Tech University
 University of Louisiana at Lafayette
@@ -727,12 +674,10 @@ Nicholls State University
 McNeese State University
 Grambling State University
 Xavier University of Louisiana
-
 University of Southern Maine
 University of New England
 Husson University
 Saint Joseph’s College of Maine
-
 University of Maryland, Baltimore
 University of Maryland, Baltimore County
 Towson University
@@ -744,7 +689,6 @@ Loyola University Maryland
 University of Baltimore
 Maryland Institute College of Art
 Mount St. Mary’s University (Maryland)
-
 Boston College
 Suffolk University
 University of Massachusetts Lowell
@@ -768,7 +712,6 @@ Springfield College
 Anna Maria College
 Endicott College
 Merrimack College
-
 University of St. Thomas (Minnesota)
 Minnesota State University, Mankato
 St. Cloud State University
@@ -781,13 +724,11 @@ Saint Mary’s University of Minnesota
 Hamline University
 Bethel University (Minnesota)
 Augsburg University
-
 Jackson State University
 University of Southern Mississippi
 Mississippi University for Women
 Delta State University
 William Carey University
-
 Missouri University of Science and Technology
 Missouri State University
 Truman State University
@@ -800,24 +741,20 @@ Park University
 Rockhurst University
 Webster University
 University of Central Missouri
-
 Montana Technological University
 University of Providence
-
 University of Nebraska Omaha
 University of Nebraska at Kearney
 Creighton University
 Wayne State College (Nebraska)
 Chadron State College
 Peru State College
-
 Plymouth State University
 Keene State College
 Southern New Hampshire University
 Franklin Pierce University
 New England College
 Rivier University
-
 Montclair State University
 Rowan University
 Seton Hall University
@@ -830,12 +767,10 @@ Saint Peter’s University
 Monmouth University
 New Jersey City University
 Rutgers University–Camden
-
 New Mexico Institute of Mining and Technology
 Eastern New Mexico University
 Western New Mexico University
 New Mexico Highlands University
-
 Syracuse University
 Hofstra University
 Adelphi University
@@ -869,7 +804,6 @@ CUNY School of Professional Studies
 CUNY School of Labor and Urban Studies
 CUNY Graduate School of Public Health & Health Policy
 CUNY School of Law
-
 East Carolina University
 Appalachian State University
 University of North Carolina at Charlotte
@@ -888,10 +822,8 @@ Elon University
 High Point University
 Wingate University
 Gardner–Webb University
-
 Minot State University
 University of Mary
-
 University of Toledo
 University of Akron
 Miami University (Ohio)
@@ -901,7 +833,6 @@ Youngstown State University
 University of Dayton
 Xavier University
 Mount St. Joseph University
-
 University of Tulsa
 Oklahoma City University
 University of Central Oklahoma
@@ -909,7 +840,6 @@ Northeastern State University
 Southeastern Oklahoma State University
 Southwestern Oklahoma State University
 Cameron University
-
 Portland State University
 Oregon Health & Science University
 Southern Oregon University
@@ -920,7 +850,6 @@ Lewis & Clark College
 Willamette University
 University of Portland
 Oregon Institute of Technology
-
 Temple University
 Drexel University
 Duquesne University
@@ -940,22 +869,18 @@ Indiana University of Pennsylvania
 Point Park University
 Robert Morris University
 Thomas Jefferson University
-
 Providence College
 Bryant University
 Rhode Island College
 Salve Regina University
-
 College of Charleston
 The Citadel
 Coastal Carolina University
 Winthrop University
 South Carolina State University
 Anderson University (South Carolina)
-
 South Dakota School of Mines & Technology
 Augustana University (South Dakota)
-
 University of Memphis
 Middle Tennessee State University
 East Tennessee State University
@@ -966,7 +891,6 @@ Lipscomb University
 Tennessee State University
 University of Tennessee at Chattanooga
 University of Tennessee at Martin
-
 The University of Texas at Dallas
 The University of Texas at Arlington
 The University of Texas at San Antonio
@@ -1003,17 +927,14 @@ Texas Wesleyan University
 Hardin-Simmons University
 Abilene Christian University
 University of St. Thomas (Houston)
-
 Brigham Young University
 Weber State University
 Southern Utah University
 Utah Valley University
 Westminster University (Utah)
-
 Norwich University
 Vermont State University
 Champlain College
-
 Virginia Commonwealth University
 George Mason University
 Old Dominion University
@@ -1027,7 +948,6 @@ Longwood University
 University of Mary Washington
 Virginia State University
 Virginia Union University
-
 Western Washington University
 Central Washington University
 Eastern Washington University
@@ -1037,7 +957,6 @@ Gonzaga University
 Pacific Lutheran University
 University of Puget Sound
 Whitworth University
-
 Marquette University
 University of Wisconsin–Milwaukee
 University of Wisconsin–La Crosse
@@ -1051,7 +970,6 @@ University of Wisconsin–River Falls
 University of Wisconsin–Parkside
 University of Wisconsin–Superior
 Milwaukee School of Engineering
-
 West Virginia University
 Marshall University
 Shepherd University
@@ -1059,3 +977,9 @@ Fairmont State University
 West Liberty University
 Wheeling University
 Concord University
+University of Michigan
+University of Minnesota
+Woods Hole Oceanographic Institution
+University of Maryland
+University of North Carolina
+University of Texas Health Science Center
