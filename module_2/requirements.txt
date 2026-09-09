@@ -1,0 +1,5 @@
+# Module 2 - Grad Cafe scraper + cleaner (Python >= 3.10)
+beautifulsoup4>=4.12,<5
+selenium>=4.20,<5
+pillow>=10.0            # converts the robots.txt screenshot to .jpg
+# The local-LLM standardizer has its own requirements: see llm_hosting/requirements.txt
