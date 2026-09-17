@@ -1,0 +1,11 @@
+# Module 3 - Grad Cafe analysis (Python >= 3.10)
+psycopg[binary]>=3.1,<4      # PostgreSQL driver (load_data.py, query_data.py, pull_new_data.py)
+SQLAlchemy>=2.0,<3           # ORM (models.py, orm_queries.py, app.py)
+Flask>=3.0,<4                # web app
+python-dotenv>=1.0           # reads DATABASE_URL from .env
+reportlab>=4.0               # builds query_results.pdf / limitations.pdf
+# Module 2 scraper, reused by Pull Data
+beautifulsoup4>=4.12,<5
+selenium>=4.20,<5
+pillow>=10.0
+# Optional: local LLM standardizer for newly pulled rows (see llm_hosting/requirements.txt)

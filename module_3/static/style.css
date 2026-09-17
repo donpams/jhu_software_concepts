@@ -1,0 +1,123 @@
+/* Grad Cafe analysis page - Module 3 */
+:root {
+  --bg: #f4f6fa;
+  --card: #ffffff;
+  --ink: #1f2933;
+  --muted: #6b7a8c;
+  --line: #dde3ea;
+  --accent: #1f5fbf;
+  --accent-dark: #174a94;
+  --ok: #1d7a46;
+  --warn: #9a6b00;
+  --err: #b3261e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+.topbar {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.topbar h1 { margin: 0; font-size: 1.5rem; }
+.subtitle { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; }
+
+.actions { display: flex; gap: 10px; }
+.actions form { margin: 0; }
+.btn {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 9px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dark); }
+.btn-secondary { background: #fff; color: var(--accent); border-color: var(--accent); }
+.btn-secondary:hover { background: #eef3fb; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 20px 24px 40px; }
+
+.flash, .status {
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.flash-info    { border-left: 4px solid var(--accent); }
+.flash-success { border-left: 4px solid var(--ok); }
+.flash-warning { border-left: 4px solid var(--warn); background: #fff9e8; }
+.status-running  { border-left: 4px solid var(--warn); background: #fff9e8; }
+.status-finished { border-left: 4px solid var(--ok); }
+.status-error    { border-left: 4px solid var(--err); background: #fdecea; }
+.status-idle     { color: var(--muted); }
+.muted { color: var(--muted); font-size: 0.9rem; }
+
+.explain {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 18px;
+  margin-bottom: 24px;
+  font-size: 0.95rem;
+}
+
+h2 { font-size: 1.15rem; margin: 26px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+.card.wide { grid-column: 1 / -1; }
+.card h3 { margin: 0 0 6px; font-size: 1rem; }
+.question { margin: 0 0 8px; color: var(--muted); font-size: 0.92rem; }
+.value { margin: 0; font-size: 2rem; font-weight: 700; color: var(--accent-dark); }
+.note { margin: 10px 0 0; font-size: 0.85rem; color: var(--muted); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 8px 0 0;
+}
+.metrics div { background: var(--bg); border-radius: 6px; padding: 10px 12px; }
+.metrics dt { font-size: 0.85rem; color: var(--muted); }
+.metrics dd { margin: 2px 0 0; font-size: 1.5rem; font-weight: 700; color: var(--accent-dark); }
+
+table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 0.95rem; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover { background: #f7f9fc; }
+
+footer { margin-top: 30px; color: var(--muted); font-size: 0.85rem; text-align: center; }

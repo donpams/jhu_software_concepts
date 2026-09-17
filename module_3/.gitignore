@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+llm_work/
+llm_hosting/models/
+pull_status.json
+data/new_applicant_data.json
+data/new_llm_extend.json
+*.tmp
