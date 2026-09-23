@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+llm_work/
+llm_hosting/models/
+data/new_applicant_data.json
+data/new_llm_extend.json
+docs/_build/doctrees/

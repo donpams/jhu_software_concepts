@@ -1,0 +1,5 @@
+# Coverage settings for module_4 (pytest.ini passes --cov=module_4/src).
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

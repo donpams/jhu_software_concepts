@@ -1,0 +1,410 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>clean &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../operations.html">Operational notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">clean</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for clean</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">clean.py - Clean scraped Grad Cafe records and run the local-LLM standardizer.</span>
+
+<span class="sd">Two stages live here:</span>
+
+<span class="sd">``clean_data(records)``</span>
+<span class="sd">    Pure-Python normalization of the dictionaries produced by ``scrape.py``:</span>
+<span class="sd">    strips any leftover HTML tags/entities, collapses whitespace, turns the</span>
+<span class="sd">    "GPA 3.88" / "GRE V 160" badges into bare values, normalizes the decision</span>
+<span class="sd">    status and uses ``None`` for every missing value.  The original</span>
+<span class="sd">    ``program`` string ("&lt;program&gt;, &lt;university&gt;") and ``raw_listing`` text</span>
+<span class="sd">    are kept untouched for traceability.</span>
+
+<span class="sd">``standardize_with_llm(...)``</span>
+<span class="sd">    Drives the instructor-provided ``llm_hosting/app.py`` (TinyLlama via</span>
+<span class="sd">    llama.cpp) to add ``llm-generated-program`` / ``llm-generated-university``.</span>
+<span class="sd">    To make the 30k-row run practical it (a) only sends each *unique* program</span>
+<span class="sd">    string to the model once and (b) runs several ``app.py`` worker processes</span>
+<span class="sd">    in parallel, then maps the results back onto every row and writes</span>
+<span class="sd">    ``llm_extend_applicant_data.json``.</span>
+
+<span class="sd">Usage::</span>
+
+<span class="sd">    python clean.py                       # applicant_data.json -&gt; cleaned_applicant_data.json</span>
+<span class="sd">    python clean.py --llm --workers 4     # ...and then produce llm_extend_applicant_data.json</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">argparse</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">html</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ThreadPoolExecutor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">bs4</span><span class="w"> </span><span class="kn">import</span> <span class="n">BeautifulSoup</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">standardize</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scrape</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_data</span><span class="p">,</span> <span class="n">save_data</span>
+
+<span class="n">LLM_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"llm_hosting"</span>
+<span class="n">CLEANED_OUTPUT</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"cleaned_applicant_data.json"</span><span class="p">)</span>
+<span class="n">LLM_OUTPUT</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"llm_extend_applicant_data.json"</span><span class="p">)</span>
+
+<span class="n">_WS_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\s+"</span><span class="p">)</span>
+<span class="n">_TAG_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"&lt;[^&gt;]+&gt;"</span><span class="p">)</span>
+<span class="n">_NUMBER_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\d+(?:\.\d+)?"</span><span class="p">)</span>
+<span class="n">_STATUS_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+    <span class="sa">r</span><span class="s2">"^(?P&lt;status&gt;Accepted|Rejected|Wait ?listed|Interview|Other)(?:\s+on\s+(?P&lt;date&gt;.+))?$"</span><span class="p">,</span>
+    <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Keys whose values are copied through (after text cleanup) in this order.</span>
+<span class="n">OUTPUT_KEYS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"program"</span><span class="p">,</span>            <span class="c1"># original "&lt;program&gt;, &lt;university&gt;" text (never altered)</span>
+    <span class="s2">"program_name"</span><span class="p">,</span>
+    <span class="s2">"university"</span><span class="p">,</span>
+    <span class="s2">"comments"</span><span class="p">,</span>
+    <span class="s2">"date_added"</span><span class="p">,</span>
+    <span class="s2">"url"</span><span class="p">,</span>
+    <span class="s2">"status"</span><span class="p">,</span>
+    <span class="s2">"decision_date"</span><span class="p">,</span>
+    <span class="s2">"term"</span><span class="p">,</span>
+    <span class="s2">"US/International"</span><span class="p">,</span>
+    <span class="s2">"GPA"</span><span class="p">,</span>
+    <span class="s2">"GRE"</span><span class="p">,</span>
+    <span class="s2">"GRE V"</span><span class="p">,</span>
+    <span class="s2">"GRE AW"</span><span class="p">,</span>
+    <span class="s2">"Degree"</span><span class="p">,</span>
+    <span class="s2">"raw_listing"</span><span class="p">,</span>
+<span class="p">]</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># Private helpers                                                             #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_strip_html</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Remove HTML tags/entities and collapse whitespace; None when empty."""</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"&lt;"</span> <span class="ow">in</span> <span class="n">text</span> <span class="ow">and</span> <span class="s2">"&gt;"</span> <span class="ow">in</span> <span class="n">text</span><span class="p">:</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="s2">"html.parser"</span><span class="p">)</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">" "</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">html</span><span class="o">.</span><span class="n">unescape</span><span class="p">(</span><span class="n">_TAG_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">))</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">_WS_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">text</span> <span class="ow">or</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_number</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""'GPA 3.88' -&gt; '3.88'; 'GRE V 160' -&gt; '160'; None if no number."""</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">match</span> <span class="o">=</span> <span class="n">_NUMBER_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">if</span> <span class="n">match</span> <span class="k">else</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_status</span><span class="p">(</span><span class="n">status</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">decision_date</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Canonical status label + the decision date that accompanied it."""</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">status</span><span class="p">)</span>
+    <span class="n">date</span> <span class="o">=</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">decision_date</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">date</span>
+    <span class="n">match</span> <span class="o">=</span> <span class="n">_STATUS_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">match</span><span class="p">:</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">canonical</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"accepted"</span><span class="p">:</span> <span class="s2">"Accepted"</span><span class="p">,</span>
+            <span class="s2">"rejected"</span><span class="p">:</span> <span class="s2">"Rejected"</span><span class="p">,</span>
+            <span class="s2">"waitlisted"</span><span class="p">:</span> <span class="s2">"Wait listed"</span><span class="p">,</span>
+            <span class="s2">"interview"</span><span class="p">:</span> <span class="s2">"Interview"</span><span class="p">,</span>
+            <span class="s2">"other"</span><span class="p">:</span> <span class="s2">"Other"</span><span class="p">,</span>
+        <span class="p">}[</span><span class="n">label</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">canonical</span><span class="p">,</span> <span class="n">date</span> <span class="ow">or</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"date"</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">text</span><span class="p">,</span> <span class="n">date</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_degree</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">lowered</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">lowered</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"phd"</span><span class="p">,</span> <span class="s2">"ph.d."</span><span class="p">,</span> <span class="s2">"doctorate"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"PhD"</span>
+    <span class="k">if</span> <span class="n">lowered</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"masters"</span><span class="p">,</span> <span class="s2">"master's"</span><span class="p">,</span> <span class="s2">"master"</span><span class="p">,</span> <span class="s2">"ms"</span><span class="p">,</span> <span class="s2">"ma"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"Masters"</span>
+    <span class="k">return</span> <span class="n">text</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_clean_record</span><span class="p">(</span><span class="n">record</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Apply every field-level cleaner to one scraped record."""</span>
+    <span class="n">status</span><span class="p">,</span> <span class="n">decision_date</span> <span class="o">=</span> <span class="n">_normalize_status</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">),</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_date"</span><span class="p">))</span>
+    <span class="n">cleaned</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"program"</span><span class="p">:</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"program"</span><span class="p">),</span>  <span class="c1"># preserved verbatim</span>
+        <span class="s2">"program_name"</span><span class="p">:</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"program_name"</span><span class="p">)),</span>
+        <span class="s2">"university"</span><span class="p">:</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"university"</span><span class="p">)),</span>
+        <span class="s2">"comments"</span><span class="p">:</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"comments"</span><span class="p">)),</span>
+        <span class="s2">"date_added"</span><span class="p">:</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"date_added"</span><span class="p">)),</span>
+        <span class="s2">"url"</span><span class="p">:</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"url"</span><span class="p">)),</span>
+        <span class="s2">"status"</span><span class="p">:</span> <span class="n">status</span><span class="p">,</span>
+        <span class="s2">"decision_date"</span><span class="p">:</span> <span class="n">decision_date</span><span class="p">,</span>
+        <span class="s2">"term"</span><span class="p">:</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"term"</span><span class="p">)),</span>
+        <span class="s2">"US/International"</span><span class="p">:</span> <span class="n">_strip_html</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"US/International"</span><span class="p">)),</span>
+        <span class="s2">"GPA"</span><span class="p">:</span> <span class="n">_extract_number</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"GPA"</span><span class="p">)),</span>
+        <span class="s2">"GRE"</span><span class="p">:</span> <span class="n">_extract_number</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"GRE"</span><span class="p">)),</span>
+        <span class="s2">"GRE V"</span><span class="p">:</span> <span class="n">_extract_number</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"GRE V"</span><span class="p">)),</span>
+        <span class="s2">"GRE AW"</span><span class="p">:</span> <span class="n">_extract_number</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"GRE AW"</span><span class="p">)),</span>
+        <span class="s2">"Degree"</span><span class="p">:</span> <span class="n">_normalize_degree</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"Degree"</span><span class="p">)),</span>
+        <span class="s2">"raw_listing"</span><span class="p">:</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_listing"</span><span class="p">),</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">cleaned</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">OUTPUT_KEYS</span><span class="p">}</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># Public API                                                                  #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="clean_data">
+<a class="viewcode-back" href="../api.html#clean.clean_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">clean_data</span><span class="p">(</span><span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Return a cleaned copy of ``records`` (see module docstring)."""</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">_clean_record</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">records</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)]</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_run_worker</span><span class="p">(</span><span class="n">chunk_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">out_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">python</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Run llm_hosting/app.py on one chunk (resumes if the chunk is done)."""</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">chunk_path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">))</span>
+    <span class="n">command</span> <span class="o">=</span> <span class="p">[</span><span class="n">python</span><span class="p">,</span> <span class="s2">"app.py"</span><span class="p">,</span> <span class="s2">"--file"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">chunk_path</span><span class="o">.</span><span class="n">resolve</span><span class="p">()),</span> <span class="s2">"--out"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="o">.</span><span class="n">resolve</span><span class="p">())]</span>
+    <span class="k">if</span> <span class="n">out_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="c1"># Resume: keep the finished lines and only send the remaining rows</span>
+        <span class="c1"># (app.py --append keeps writing to the same JSONL file).</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">out_path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="n">done</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">fh</span> <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">done</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+            <span class="k">return</span>
+        <span class="n">remaining_path</span> <span class="o">=</span> <span class="n">chunk_path</span><span class="o">.</span><span class="n">with_name</span><span class="p">(</span><span class="n">chunk_path</span><span class="o">.</span><span class="n">stem</span> <span class="o">+</span> <span class="s2">"_remaining.json"</span><span class="p">)</span>
+        <span class="n">remaining_path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">rows</span><span class="p">[</span><span class="n">done</span><span class="p">:],</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="p">[</span><span class="n">python</span><span class="p">,</span> <span class="s2">"app.py"</span><span class="p">,</span> <span class="s2">"--file"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">remaining_path</span><span class="o">.</span><span class="n">resolve</span><span class="p">()),</span>
+                   <span class="s2">"--out"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">out_path</span><span class="o">.</span><span class="n">resolve</span><span class="p">()),</span> <span class="s2">"--append"</span><span class="p">]</span>
+    <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">command</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="n">LLM_DIR</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_refine_standardized</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Post-process the LLM output using the site's own university field.</span>
+
+<span class="sd">    Grad Cafe lists the university in its own column, so the scraped</span>
+<span class="sd">    ``university`` value is a more reliable starting point than the LLM's</span>
+<span class="sd">    split of the combined ``program`` string.  When the scraped name, run</span>
+<span class="sd">    through the canonical normalizer, lands exactly on a canonical</span>
+<span class="sd">    university it replaces the LLM's answer; otherwise the LLM's answer is</span>
+<span class="sd">    kept.  Connector-word title-casing ("Master Of Arts") is fixed in both</span>
+<span class="sd">    standardized fields.</span>
+<span class="sd">    """</span>
+    <span class="n">scraped_university</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"university"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+    <span class="k">if</span> <span class="n">scraped_university</span><span class="p">:</span>
+        <span class="n">candidate</span> <span class="o">=</span> <span class="n">standardize</span><span class="o">.</span><span class="n">normalize_university</span><span class="p">(</span><span class="n">scraped_university</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">candidate</span> <span class="ow">in</span> <span class="n">standardize</span><span class="o">.</span><span class="n">CANON_UNIS</span> <span class="ow">and</span> <span class="n">candidate</span> <span class="o">!=</span> <span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"llm-generated-university"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">):</span>
+            <span class="n">row</span><span class="p">[</span><span class="s2">"llm-generated-university"</span><span class="p">]</span> <span class="o">=</span> <span class="n">candidate</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"llm-generated-program"</span><span class="p">,</span> <span class="s2">"llm-generated-university"</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+            <span class="n">row</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">standardize</span><span class="o">.</span><span class="n">fix_title_case</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">row</span>
+
+
+<div class="viewcode-block" id="standardize_rules_only">
+<a class="viewcode-back" href="../api.html#clean.standardize_rules_only">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">standardize_rules_only</span><span class="p">(</span><span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Fill llm-generated-* fields without a model (used when llama.cpp is absent)."""</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="n">program</span><span class="p">,</span> <span class="n">university</span> <span class="o">=</span> <span class="n">standardize</span><span class="o">.</span><span class="n">split_program_string</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"program"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">row</span><span class="p">,</span>
+                  <span class="s2">"llm-generated-program"</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"program_name"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">program</span><span class="p">,</span>
+                  <span class="s2">"llm-generated-university"</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"university"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">university</span><span class="p">}</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_refine_standardized</span><span class="p">(</span><span class="n">merged</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="standardize_with_llm">
+<a class="viewcode-back" href="../api.html#clean.standardize_with_llm">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">standardize_with_llm</span><span class="p">(</span>
+    <span class="n">cleaned</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="n">output</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">LLM_OUTPUT</span><span class="p">,</span>
+    <span class="n">workers</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">2</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="n">work_dir</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"llm_work"</span><span class="p">),</span>
+    <span class="n">python</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Add llm-generated-program / llm-generated-university to every row.</span>
+
+<span class="sd">    Only unique ``program`` strings are sent to the model; the answers are</span>
+<span class="sd">    cached in ``work_dir`` (JSON Lines) so an interrupted run resumes.</span>
+<span class="sd">    """</span>
+    <span class="n">work_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">unique_programs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"program"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">cleaned</span> <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"program"</span><span class="p">)})</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cleaned</span><span class="p">)</span><span class="si">}</span><span class="s2"> rows -&gt; </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">unique_programs</span><span class="p">)</span><span class="si">}</span><span class="s2"> unique program strings; </span><span class="si">{</span><span class="n">workers</span><span class="si">}</span><span class="s2"> worker(s)"</span><span class="p">)</span>
+
+    <span class="n">chunk_size</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">unique_programs</span><span class="p">)</span> <span class="o">//</span> <span class="n">workers</span><span class="p">)</span>
+    <span class="n">jobs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">workers</span><span class="p">):</span>
+        <span class="n">chunk</span> <span class="o">=</span> <span class="n">unique_programs</span><span class="p">[</span><span class="n">index</span> <span class="o">*</span> <span class="n">chunk_size</span><span class="p">:(</span><span class="n">index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">chunk_size</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">chunk</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">chunk_path</span> <span class="o">=</span> <span class="n">work_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"chunk_</span><span class="si">{</span><span class="n">index</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">.json"</span>
+        <span class="n">out_path</span> <span class="o">=</span> <span class="n">work_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"chunk_</span><span class="si">{</span><span class="n">index</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">.jsonl"</span>
+        <span class="n">chunk_path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">([{</span><span class="s2">"program"</span><span class="p">:</span> <span class="n">p</span><span class="p">}</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">chunk</span><span class="p">],</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+        <span class="n">jobs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">chunk_path</span><span class="p">,</span> <span class="n">out_path</span><span class="p">))</span>
+
+    <span class="c1"># Each worker is a separate process (its own llama.cpp instance); threads</span>
+    <span class="c1"># here only wait on those processes.</span>
+    <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+        <span class="nb">list</span><span class="p">(</span><span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">job</span><span class="p">:</span> <span class="n">_run_worker</span><span class="p">(</span><span class="n">job</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">job</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">python</span><span class="p">),</span> <span class="n">jobs</span><span class="p">))</span>
+
+    <span class="n">lookup</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">out_path</span> <span class="ow">in</span> <span class="n">jobs</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">out_path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">fh</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                    <span class="n">row</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+                    <span class="n">lookup</span><span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="s2">"program"</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span> <span class="o">=</span> <span class="p">{</span>
+                        <span class="s2">"llm-generated-program"</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"llm-generated-program"</span><span class="p">),</span>
+                        <span class="s2">"llm-generated-university"</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"llm-generated-university"</span><span class="p">),</span>
+                    <span class="p">}</span>
+
+    <span class="n">extended</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">record</span> <span class="ow">in</span> <span class="n">cleaned</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">lookup</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"program"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="p">{})</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">record</span><span class="p">,</span>
+               <span class="s2">"llm-generated-program"</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"llm-generated-program"</span><span class="p">),</span>
+               <span class="s2">"llm-generated-university"</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"llm-generated-university"</span><span class="p">)}</span>
+        <span class="n">extended</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_refine_standardized</span><span class="p">(</span><span class="n">row</span><span class="p">))</span>
+    <span class="n">save_data</span><span class="p">(</span><span class="n">extended</span><span class="p">,</span> <span class="n">output</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"wrote </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">extended</span><span class="p">)</span><span class="si">}</span><span class="s2"> rows to </span><span class="si">{</span><span class="n">output</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">extended</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../api.html#clean.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">argv</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="vm">__doc__</span><span class="p">,</span> <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--input"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">Path</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"applicant_data.json"</span><span class="p">))</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--output"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">Path</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">CLEANED_OUTPUT</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--llm"</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">"store_true"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"also run the local-LLM standardizer"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--llm-output"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">Path</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">LLM_OUTPUT</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--workers"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">2</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
+
+    <span class="n">cleaned</span> <span class="o">=</span> <span class="n">clean_data</span><span class="p">(</span><span class="n">load_data</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">input</span><span class="p">))</span>
+    <span class="n">save_data</span><span class="p">(</span><span class="n">cleaned</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"cleaned </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">cleaned</span><span class="p">)</span><span class="si">}</span><span class="s2"> records -&gt; </span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">output</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">llm</span><span class="p">:</span>
+        <span class="n">standardize_with_llm</span><span class="p">(</span><span class="n">cleaned</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">llm_output</span><span class="p">,</span> <span class="n">workers</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">workers</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>  <span class="c1"># pragma: no cover</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

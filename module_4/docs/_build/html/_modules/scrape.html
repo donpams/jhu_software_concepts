@@ -1,0 +1,755 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>scrape &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../operations.html">Operational notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">scrape</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for scrape</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">scrape.py - Grad Cafe admissions-results scraper (JHU Software Concepts, Module 2).</span>
+
+<span class="sd">Workflow (hybrid urllib + Selenium + BeautifulSoup):</span>
+
+<span class="sd">    1. urllib builds / inspects every Grad Cafe URL (urllib.parse) and evaluates</span>
+<span class="sd">       robots.txt (urllib.robotparser).</span>
+<span class="sd">    2. A *normal* Google Chrome window that the user opened themselves (with</span>
+<span class="sd">       remote debugging enabled) renders the pages.  Selenium merely attaches to</span>
+<span class="sd">       that window through the DevTools "debuggerAddress" option.  Cloudflare's</span>
+<span class="sd">       human-verification step is completed by the user, once, by hand - the</span>
+<span class="sd">       scraper simply waits for the results table to appear and never tries to</span>
+<span class="sd">       evade the check.</span>
+<span class="sd">    3. The rendered HTML (driver.page_source) is parsed with BeautifulSoup,</span>
+<span class="sd">       Python string methods and a little regex into one dictionary per</span>
+<span class="sd">       applicant entry.</span>
+<span class="sd">    4. Records are appended to applicant_data.json after every page and the</span>
+<span class="sd">       site's "Next" link (a keyset ``cursor``) is written to a small</span>
+<span class="sd">       checkpoint file, so an interrupted run resumes where it left off.</span>
+
+<span class="sd">Run ``python scrape.py --help`` for the CLI, or see README.md.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">argparse</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">urllib.robotparser</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">urllib.parse</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_qs</span><span class="p">,</span> <span class="n">urlencode</span><span class="p">,</span> <span class="n">urljoin</span><span class="p">,</span> <span class="n">urlparse</span><span class="p">,</span> <span class="n">urlunparse</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">bs4</span><span class="w"> </span><span class="kn">import</span> <span class="n">BeautifulSoup</span><span class="p">,</span> <span class="n">Tag</span>
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># URL management (urllib)                                                     #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">"https://www.thegradcafe.com"</span>
+<span class="n">SURVEY_PATH</span> <span class="o">=</span> <span class="s2">"/survey/"</span>
+<span class="n">ROBOTS_URL</span> <span class="o">=</span> <span class="n">urljoin</span><span class="p">(</span><span class="n">BASE_URL</span><span class="p">,</span> <span class="s2">"/robots.txt"</span><span class="p">)</span>
+<span class="n">USER_AGENT</span> <span class="o">=</span> <span class="s2">"*"</span>  <span class="c1"># the robots.txt group our (non-AI-crawler) scraper falls under</span>
+
+<span class="n">DEFAULT_OUTPUT</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"applicant_data.json"</span><span class="p">)</span>
+<span class="n">DEFAULT_CHECKPOINT</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"scrape_checkpoint.json"</span><span class="p">)</span>
+<span class="n">DEFAULT_HTML_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"raw_html"</span><span class="p">)</span>
+
+<span class="c1"># Text Cloudflare shows while it is deciding whether we are human.</span>
+<span class="n">CLOUDFLARE_MARKERS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"Just a moment..."</span><span class="p">,</span> <span class="s2">"Verify you are human"</span><span class="p">,</span> <span class="s2">"cf-chl"</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="build_survey_url">
+<a class="viewcode-back" href="../api.html#scrape.build_survey_url">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_survey_url</span><span class="p">(</span><span class="n">page</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">extra_query</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return the canonical URL for one page of Grad Cafe survey results.</span>
+
+<span class="sd">    The URL is assembled with urllib.parse so that query encoding is always</span>
+<span class="sd">    correct (e.g. ``https://www.thegradcafe.com/survey/?page=3``).</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">page</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"page numbers start at 1"</span><span class="p">)</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"page"</span><span class="p">:</span> <span class="n">page</span><span class="p">,</span> <span class="o">**</span><span class="n">extra_query</span><span class="p">}</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">BASE_URL</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">urlunparse</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">parts</span><span class="o">.</span><span class="n">scheme</span><span class="p">,</span> <span class="n">parts</span><span class="o">.</span><span class="n">netloc</span><span class="p">,</span> <span class="n">SURVEY_PATH</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="n">urlencode</span><span class="p">(</span><span class="n">query</span><span class="p">),</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="inspect_cursor">
+<a class="viewcode-back" href="../api.html#scrape.inspect_cursor">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">inspect_cursor</span><span class="p">(</span><span class="n">url</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Decode the base64 ``cursor`` query parameter Grad Cafe uses for paging.</span>
+
+<span class="sd">    Grad Cafe ignores ``page=N`` on its own; the real position is a keyset</span>
+<span class="sd">    cursor such as ``{"created_at": "...", "admitid": 1020459, ...}``.  We</span>
+<span class="sd">    decode it purely for logging / traceability, never to fabricate one.</span>
+<span class="sd">    """</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">parse_qs</span><span class="p">(</span><span class="n">urlparse</span><span class="p">(</span><span class="n">url</span><span class="p">)</span><span class="o">.</span><span class="n">query</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cursor"</span><span class="p">,</span> <span class="p">[</span><span class="kc">None</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">cursor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">padded</span> <span class="o">=</span> <span class="n">cursor</span> <span class="o">+</span> <span class="s2">"="</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">cursor</span><span class="p">)</span> <span class="o">%</span> <span class="mi">4</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">urlsafe_b64decode</span><span class="p">(</span><span class="n">padded</span><span class="p">)</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">"utf-8"</span><span class="p">))</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">UnicodeDecodeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">"raw"</span><span class="p">:</span> <span class="n">cursor</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="inspect_url">
+<a class="viewcode-back" href="../api.html#scrape.inspect_url">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">inspect_url</span><span class="p">(</span><span class="n">url</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Break a Grad Cafe URL into its components (used for validation/logging)."""</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">urlparse</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">parse_qs</span><span class="p">(</span><span class="n">parts</span><span class="o">.</span><span class="n">query</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"scheme"</span><span class="p">:</span> <span class="n">parts</span><span class="o">.</span><span class="n">scheme</span><span class="p">,</span>
+        <span class="s2">"host"</span><span class="p">:</span> <span class="n">parts</span><span class="o">.</span><span class="n">netloc</span><span class="p">,</span>
+        <span class="s2">"path"</span><span class="p">:</span> <span class="n">parts</span><span class="o">.</span><span class="n">path</span><span class="p">,</span>
+        <span class="s2">"query"</span><span class="p">:</span> <span class="n">query</span><span class="p">,</span>
+        <span class="s2">"page"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">query</span><span class="p">[</span><span class="s2">"page"</span><span class="p">])</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"is_gradcafe"</span><span class="p">:</span> <span class="n">parts</span><span class="o">.</span><span class="n">netloc</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"thegradcafe.com"</span><span class="p">),</span>
+        <span class="s2">"cursor"</span><span class="p">:</span> <span class="n">inspect_cursor</span><span class="p">(</span><span class="n">url</span><span class="p">),</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="result_url_from_href">
+<a class="viewcode-back" href="../api.html#scrape.result_url_from_href">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">result_url_from_href</span><span class="p">(</span><span class="n">href</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Turn a relative ``/result/123456`` link into an absolute URL."""</span>
+    <span class="k">return</span> <span class="n">urljoin</span><span class="p">(</span><span class="n">BASE_URL</span><span class="p">,</span> <span class="n">href</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># JSON persistence                                                            #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="save_data">
+<a class="viewcode-back" href="../api.html#scrape.save_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">save_data</span><span class="p">(</span><span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DEFAULT_OUTPUT</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Write the list of applicant dictionaries to ``path`` as UTF-8 JSON."""</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="n">tmp_path</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">suffix</span> <span class="o">+</span> <span class="s2">".tmp"</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">fh</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">tmp_path</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>  <span class="c1"># atomic on POSIX -&gt; a crash never leaves a half file</span></div>
+
+
+
+<div class="viewcode-block" id="load_data">
+<a class="viewcode-back" href="../api.html#scrape.load_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_data</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DEFAULT_OUTPUT</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Load previously saved applicant dictionaries (empty list if none)."""</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"r"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">,</span> <span class="p">[])</span></div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># HTML parsing helpers                                                        #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="n">_WS_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\s+"</span><span class="p">)</span>
+<span class="n">_DECISION_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+    <span class="sa">r</span><span class="s2">"^(?P&lt;status&gt;Accepted|Rejected|Wait ?listed|Interview|Other)"</span>
+    <span class="sa">r</span><span class="s2">"(?:\s+on\s+(?P&lt;date&gt;.+))?$"</span><span class="p">,</span>
+    <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">_TERM_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^(Fall|Spring|Summer|Winter)\s+\d</span><span class="si">{4}</span><span class="s2">$"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+<span class="n">_GPA_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^GPA\s+(?P&lt;value&gt;[\d.]+)$"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+<span class="n">_GRE_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^GRE\s+(?P&lt;kind&gt;V|AW|Q)?\s*(?P&lt;value&gt;[\d.]+)$"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+<span class="n">_DEGREE_WORDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"PhD"</span><span class="p">,</span> <span class="s2">"Masters"</span><span class="p">,</span> <span class="s2">"MBA"</span><span class="p">,</span> <span class="s2">"MFA"</span><span class="p">,</span> <span class="s2">"JD"</span><span class="p">,</span> <span class="s2">"EdD"</span><span class="p">,</span> <span class="s2">"PsyD"</span><span class="p">,</span> <span class="s2">"Other"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_clean_text</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Collapse whitespace and strip; HTML entities are already decoded by bs4."""</span>
+    <span class="k">return</span> <span class="n">_WS_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="n">value</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_text</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tag</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">_clean_text</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">get_text</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span> <span class="k">if</span> <span class="n">node</span> <span class="k">else</span> <span class="s2">""</span>
+
+
+<div class="viewcode-block" id="GradCafeScraper">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GradCafeScraper</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Scrape, parse and persist Grad Cafe admissions results.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    delay_seconds:</span>
+<span class="sd">        Polite pause between page loads (SHOULD requirement).</span>
+<span class="sd">    debugger_address:</span>
+<span class="sd">        ``host:port`` of a Chrome instance started with</span>
+<span class="sd">        ``--remote-debugging-port``.  Selenium attaches to it instead of</span>
+<span class="sd">        launching its own browser, which is what lets a human clear the</span>
+<span class="sd">        Cloudflare check once.</span>
+<span class="sd">    html_dir:</span>
+<span class="sd">        If given, every rendered page is saved here (page_0001.html ...) for</span>
+<span class="sd">        traceability / offline re-parsing.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">delay_seconds</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span>
+        <span class="n">debugger_address</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"127.0.0.1:9222"</span><span class="p">,</span>
+        <span class="n">html_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="n">DEFAULT_HTML_DIR</span><span class="p">,</span>
+        <span class="n">challenge_timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">300</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delay_seconds</span> <span class="o">=</span> <span class="n">delay_seconds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">debugger_address</span> <span class="o">=</span> <span class="n">debugger_address</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">html_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">html_dir</span><span class="p">)</span> <span class="k">if</span> <span class="n">html_dir</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">challenge_timeout</span> <span class="o">=</span> <span class="n">challenge_timeout</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_driver</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># created lazily (Selenium import is optional for parsing)</span>
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># Browser plumbing (Selenium)                                         #</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">driver</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Attach to the user's already-running Chrome on first use."""</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_driver</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">selenium</span><span class="w"> </span><span class="kn">import</span> <span class="n">webdriver</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">selenium.webdriver.chrome.options</span><span class="w"> </span><span class="kn">import</span> <span class="n">Options</span>
+
+            <span class="n">options</span> <span class="o">=</span> <span class="n">Options</span><span class="p">()</span>
+            <span class="n">options</span><span class="o">.</span><span class="n">add_experimental_option</span><span class="p">(</span><span class="s2">"debuggerAddress"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">debugger_address</span><span class="p">)</span>
+            <span class="c1"># Selenium Manager (bundled with selenium&gt;=4.6) resolves chromedriver.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_driver</span> <span class="o">=</span> <span class="n">webdriver</span><span class="o">.</span><span class="n">Chrome</span><span class="p">(</span><span class="n">options</span><span class="o">=</span><span class="n">options</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_driver</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_wait_for_results</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Explicit wait until the results table is rendered.</span>
+
+<span class="sd">        Returns True when at least one ``/result/`` link is present, False on</span>
+<span class="sd">        timeout.  While Cloudflare's challenge is showing we keep waiting so</span>
+<span class="sd">        the user can complete it by hand; nothing here interacts with it.</span>
+<span class="sd">        """</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">selenium.common.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">TimeoutException</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">selenium.webdriver.common.by</span><span class="w"> </span><span class="kn">import</span> <span class="n">By</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">selenium.webdriver.support</span><span class="w"> </span><span class="kn">import</span> <span class="n">expected_conditions</span> <span class="k">as</span> <span class="n">EC</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">selenium.webdriver.support.ui</span><span class="w"> </span><span class="kn">import</span> <span class="n">WebDriverWait</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">WebDriverWait</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span><span class="o">.</span><span class="n">until</span><span class="p">(</span>
+                <span class="n">EC</span><span class="o">.</span><span class="n">presence_of_element_located</span><span class="p">((</span><span class="n">By</span><span class="o">.</span><span class="n">CSS_SELECTOR</span><span class="p">,</span> <span class="s2">"a[href*='/result/']"</span><span class="p">))</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="n">TimeoutException</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fetch_page_html</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">page</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Load one survey page (by URL) in the attached Chrome, return its HTML.</span>
+
+<span class="sd">        ``page`` is only used to name the archived HTML file.</span>
+<span class="sd">        """</span>
+        <span class="n">info</span> <span class="o">=</span> <span class="n">inspect_url</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">info</span><span class="p">[</span><span class="s2">"is_gradcafe"</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"refusing to load non-GradCafe URL </span><span class="si">{</span><span class="n">url</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_results</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">15</span><span class="p">):</span>
+            <span class="c1"># Probably the Cloudflare interstitial.  Ask the user to clear it</span>
+            <span class="c1"># and wait patiently - but never attempt to solve it ourselves.</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_looks_blocked</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">page_source</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">[!] Cloudflare verification is showing for </span><span class="si">{</span><span class="n">url</span><span class="si">}</span><span class="s2">.</span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="sa">f</span><span class="s2">"    Please complete it in the Chrome window (waiting up to "</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">challenge_timeout</span><span class="si">}</span><span class="s2">s)..."</span><span class="p">,</span>
+                    <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wait_for_results</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">challenge_timeout</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Site did not return results; stopping (blocked?)"</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"No results table found on </span><span class="si">{</span><span class="n">url</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="n">html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">page_source</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">html_dir</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">html_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">html_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"page_</span><span class="si">{</span><span class="n">page</span><span class="si">:</span><span class="s2">04d</span><span class="si">}</span><span class="s2">.html"</span><span class="p">)</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">html</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">html</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_looks_blocked</span><span class="p">(</span><span class="n">html</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Heuristic: is this a Cloudflare challenge / block page?"""</span>
+        <span class="n">head</span> <span class="o">=</span> <span class="n">html</span><span class="p">[:</span><span class="mi">20000</span><span class="p">]</span>
+        <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">marker</span> <span class="ow">in</span> <span class="n">head</span> <span class="k">for</span> <span class="n">marker</span> <span class="ow">in</span> <span class="n">CLOUDFLARE_MARKERS</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"403 Forbidden"</span> <span class="ow">in</span> <span class="n">head</span>
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># robots.txt                                                          #</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+<div class="viewcode-block" id="GradCafeScraper.check_robots">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper.check_robots">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_robots</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">screenshot_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"screenshot.jpg"</span><span class="p">))</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Load robots.txt in the browser, evaluate it with urllib.robotparser.</span>
+
+<span class="sd">        The rendered page is screenshotted as evidence (screenshot.jpg) and the</span>
+<span class="sd">        verdict for the survey URL is returned.  Scraping is refused if the</span>
+<span class="sd">        survey path is disallowed for our user-agent group.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ROBOTS_URL</span><span class="p">)</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.5</span><span class="p">)</span>
+        <span class="n">body</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">find_element</span><span class="p">(</span><span class="s2">"tag name"</span><span class="p">,</span> <span class="s2">"body"</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_looks_blocked</span><span class="p">(</span><span class="n">body</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">"[!] robots.txt is behind the Cloudflare check; complete it, then rerun."</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="n">parser</span> <span class="o">=</span> <span class="n">urllib</span><span class="o">.</span><span class="n">robotparser</span><span class="o">.</span><span class="n">RobotFileParser</span><span class="p">(</span><span class="n">ROBOTS_URL</span><span class="p">)</span>
+        <span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">body</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span>
+        <span class="n">allowed</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">can_fetch</span><span class="p">(</span><span class="n">USER_AGENT</span><span class="p">,</span> <span class="n">build_survey_url</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"robots.txt: </span><span class="si">{</span><span class="s1">'ALLOWS'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">allowed</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'DISALLOWS'</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">SURVEY_PATH</span><span class="si">}</span><span class="s2"> for User-agent </span><span class="si">{</span><span class="n">USER_AGENT</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">screenshot_path</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="o">.</span><span class="n">save_screenshot</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">screenshot_path</span><span class="p">)</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">".png"</span><span class="p">)))</span>
+            <span class="k">try</span><span class="p">:</span>  <span class="c1"># convert to .jpg as the assignment asks (Pillow ships with selenium deps)</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">PIL</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>
+
+                <span class="n">img</span> <span class="o">=</span> <span class="n">Image</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">screenshot_path</span><span class="p">)</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">".png"</span><span class="p">))</span><span class="o">.</span><span class="n">convert</span><span class="p">(</span><span class="s2">"RGB"</span><span class="p">)</span>
+                <span class="n">img</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">screenshot_path</span><span class="p">,</span> <span class="s2">"JPEG"</span><span class="p">,</span> <span class="n">quality</span><span class="o">=</span><span class="mi">90</span><span class="p">)</span>
+                <span class="n">Path</span><span class="p">(</span><span class="n">screenshot_path</span><span class="p">)</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">".png"</span><span class="p">)</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="n">Path</span><span class="p">(</span><span class="n">screenshot_path</span><span class="p">)</span><span class="o">.</span><span class="n">with_name</span><span class="p">(</span><span class="s2">"robots.txt"</span><span class="p">)</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">allowed</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># Parsing (BeautifulSoup + string methods + regex)                   #</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_page</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">html</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Return a list of applicant dictionaries found in one page's HTML.</span>
+
+<span class="sd">        Each applicant on Grad Cafe spans one *main* table row (university,</span>
+<span class="sd">        program, date added, decision, link) followed by zero or more</span>
+<span class="sd">        *detail* rows (term / nationality / GPA / GRE badges, and the free-text</span>
+<span class="sd">        comment).  We walk the rows in order and group them.</span>
+<span class="sd">        """</span>
+        <span class="n">soup</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">html</span><span class="p">,</span> <span class="s2">"html.parser"</span><span class="p">)</span>
+        <span class="n">table</span> <span class="o">=</span> <span class="n">soup</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"table"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">table</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">main_row</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tag</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">detail_rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tag</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">table</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">"tr"</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">row</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"a"</span><span class="p">,</span> <span class="n">href</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"/result/\d+"</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="n">main_row</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parse_entry</span><span class="p">(</span><span class="n">main_row</span><span class="p">,</span> <span class="n">detail_rows</span><span class="p">))</span>
+                <span class="n">main_row</span><span class="p">,</span> <span class="n">detail_rows</span> <span class="o">=</span> <span class="n">row</span><span class="p">,</span> <span class="p">[]</span>
+            <span class="k">elif</span> <span class="n">main_row</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">detail_rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">main_row</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parse_entry</span><span class="p">(</span><span class="n">main_row</span><span class="p">,</span> <span class="n">detail_rows</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">records</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_find_next_url</span><span class="p">(</span><span class="n">html</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return the absolute URL of the "Next" pagination link, if any.</span>
+
+<span class="sd">        Grad Cafe pages with a keyset ``cursor`` parameter, so the only</span>
+<span class="sd">        reliable way to reach page N+1 is to follow the link the site gives</span>
+<span class="sd">        us.  The href is normalised with urllib (parse -&gt; rebuild) so the</span>
+<span class="sd">        request always goes to the canonical survey path.</span>
+<span class="sd">        """</span>
+        <span class="n">soup</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">html</span><span class="p">,</span> <span class="s2">"html.parser"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">anchor</span> <span class="ow">in</span> <span class="n">soup</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">"a"</span><span class="p">,</span> <span class="n">href</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">_text</span><span class="p">(</span><span class="n">anchor</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"next"</span><span class="p">:</span>
+                <span class="n">href</span> <span class="o">=</span> <span class="n">urljoin</span><span class="p">(</span><span class="n">BASE_URL</span><span class="p">,</span> <span class="n">anchor</span><span class="p">[</span><span class="s2">"href"</span><span class="p">])</span>
+                <span class="n">query</span> <span class="o">=</span> <span class="n">parse_qs</span><span class="p">(</span><span class="n">urlparse</span><span class="p">(</span><span class="n">href</span><span class="p">)</span><span class="o">.</span><span class="n">query</span><span class="p">)</span>
+                <span class="n">cursor</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cursor"</span><span class="p">,</span> <span class="p">[</span><span class="kc">None</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">page</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page"</span><span class="p">,</span> <span class="p">[</span><span class="s2">"1"</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">cursor</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">None</span>
+                <span class="k">return</span> <span class="n">build_survey_url</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">page</span><span class="p">)</span> <span class="k">if</span> <span class="n">page</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="k">else</span> <span class="mi">1</span><span class="p">,</span> <span class="n">cursor</span><span class="o">=</span><span class="n">cursor</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_entry</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">main_row</span><span class="p">:</span> <span class="n">Tag</span><span class="p">,</span> <span class="n">detail_rows</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tag</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Convert one applicant's table rows into a flat dictionary."""</span>
+        <span class="c1"># Drop screen-reader-only labels ("Total comments") so they do not</span>
+        <span class="c1"># pollute the preserved raw listing text.</span>
+        <span class="k">for</span> <span class="n">hidden</span> <span class="ow">in</span> <span class="n">main_row</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s2">".tw-sr-only"</span><span class="p">):</span>
+            <span class="n">hidden</span><span class="o">.</span><span class="n">decompose</span><span class="p">()</span>
+        <span class="n">cells</span> <span class="o">=</span> <span class="n">main_row</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">"td"</span><span class="p">)</span>
+        <span class="n">university</span> <span class="o">=</span> <span class="n">_text</span><span class="p">(</span><span class="n">cells</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cells</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="s2">""</span>
+
+        <span class="c1"># Program cell: "&lt;span&gt;Program&lt;/span&gt; ... &lt;span&gt;Degree&lt;/span&gt;"</span>
+        <span class="n">program_cell</span> <span class="o">=</span> <span class="n">cells</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cells</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">spans</span> <span class="o">=</span> <span class="p">[</span><span class="n">_text</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">program_cell</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">"span"</span><span class="p">)]</span> <span class="k">if</span> <span class="n">program_cell</span> <span class="k">else</span> <span class="p">[]</span>
+        <span class="n">spans</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">spans</span> <span class="k">if</span> <span class="n">s</span><span class="p">]</span>
+        <span class="n">program_name</span> <span class="o">=</span> <span class="n">spans</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">spans</span> <span class="k">else</span> <span class="n">_text</span><span class="p">(</span><span class="n">program_cell</span><span class="p">)</span>
+        <span class="n">degree</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">spans</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="k">if</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">_DEGREE_WORDS</span><span class="p">),</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">degree</span><span class="p">:</span>
+            <span class="n">degree</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">spans</span><span class="p">[</span><span class="mi">1</span><span class="p">:]),</span> <span class="s2">""</span><span class="p">)</span>
+
+        <span class="n">date_added</span> <span class="o">=</span> <span class="n">_text</span><span class="p">(</span><span class="n">cells</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cells</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="k">else</span> <span class="s2">""</span>
+        <span class="n">decision_raw</span> <span class="o">=</span> <span class="n">_text</span><span class="p">(</span><span class="n">cells</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cells</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span> <span class="k">else</span> <span class="s2">""</span>
+        <span class="n">status</span><span class="p">,</span> <span class="n">decision_date</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_status</span><span class="p">(</span><span class="n">decision_raw</span><span class="p">)</span>
+
+        <span class="n">link</span> <span class="o">=</span> <span class="n">main_row</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"a"</span><span class="p">,</span> <span class="n">href</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"/result/\d+"</span><span class="p">))</span>
+        <span class="n">entry_url</span> <span class="o">=</span> <span class="n">result_url_from_href</span><span class="p">(</span><span class="n">link</span><span class="p">[</span><span class="s2">"href"</span><span class="p">])</span> <span class="k">if</span> <span class="n">link</span> <span class="k">else</span> <span class="s2">""</span>
+
+        <span class="c1"># Badges and comment from the detail rows</span>
+        <span class="n">term</span> <span class="o">=</span> <span class="n">nationality</span> <span class="o">=</span> <span class="n">gpa</span> <span class="o">=</span> <span class="n">gre</span> <span class="o">=</span> <span class="n">gre_v</span> <span class="o">=</span> <span class="n">gre_aw</span> <span class="o">=</span> <span class="s2">""</span>
+        <span class="n">comments</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">detail_rows</span><span class="p">:</span>
+            <span class="n">paragraph</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"p"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">paragraph</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">comments</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_text</span><span class="p">(</span><span class="n">paragraph</span><span class="p">))</span>
+                <span class="k">continue</span>
+            <span class="k">for</span> <span class="n">badge</span> <span class="ow">in</span> <span class="n">row</span><span class="o">.</span><span class="n">find_all</span><span class="p">(</span><span class="s2">"div"</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">badge</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"div"</span><span class="p">):</span>
+                    <span class="k">continue</span>  <span class="c1"># only leaf &lt;div&gt;s are badges</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">_text</span><span class="p">(</span><span class="n">badge</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">_TERM_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+                    <span class="n">term</span> <span class="o">=</span> <span class="n">text</span>
+                <span class="k">elif</span> <span class="n">text</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"International"</span><span class="p">,</span> <span class="s2">"American"</span><span class="p">):</span>
+                    <span class="n">nationality</span> <span class="o">=</span> <span class="n">text</span>
+                <span class="k">elif</span> <span class="n">_GPA_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+                    <span class="n">gpa</span> <span class="o">=</span> <span class="n">text</span>
+                <span class="k">elif</span> <span class="p">(</span><span class="n">m</span> <span class="o">:=</span> <span class="n">_GRE_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">text</span><span class="p">)):</span>
+                    <span class="n">kind</span> <span class="o">=</span> <span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"kind"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">"V"</span><span class="p">:</span>
+                        <span class="n">gre_v</span> <span class="o">=</span> <span class="n">text</span>
+                    <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">"AW"</span><span class="p">:</span>
+                        <span class="n">gre_aw</span> <span class="o">=</span> <span class="n">text</span>
+                    <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">""</span><span class="p">:</span>
+                        <span class="n">gre</span> <span class="o">=</span> <span class="n">text</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="c1"># raw text preserved for traceability</span>
+            <span class="s2">"program"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">program_name</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">university</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"raw_listing"</span><span class="p">:</span> <span class="n">_text</span><span class="p">(</span><span class="n">main_row</span><span class="p">),</span>
+            <span class="c1"># cleaned / split fields</span>
+            <span class="s2">"program_name"</span><span class="p">:</span> <span class="n">program_name</span><span class="p">,</span>
+            <span class="s2">"university"</span><span class="p">:</span> <span class="n">university</span><span class="p">,</span>
+            <span class="s2">"comments"</span><span class="p">:</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">comments</span><span class="p">),</span>
+            <span class="s2">"date_added"</span><span class="p">:</span> <span class="n">date_added</span><span class="p">,</span>
+            <span class="s2">"url"</span><span class="p">:</span> <span class="n">entry_url</span><span class="p">,</span>
+            <span class="s2">"status"</span><span class="p">:</span> <span class="n">status</span><span class="p">,</span>
+            <span class="s2">"decision_raw"</span><span class="p">:</span> <span class="n">decision_raw</span><span class="p">,</span>
+            <span class="s2">"decision_date"</span><span class="p">:</span> <span class="n">decision_date</span><span class="p">,</span>
+            <span class="s2">"term"</span><span class="p">:</span> <span class="n">term</span><span class="p">,</span>
+            <span class="s2">"US/International"</span><span class="p">:</span> <span class="n">nationality</span><span class="p">,</span>
+            <span class="s2">"GPA"</span><span class="p">:</span> <span class="n">gpa</span><span class="p">,</span>
+            <span class="s2">"GRE"</span><span class="p">:</span> <span class="n">gre</span><span class="p">,</span>
+            <span class="s2">"GRE V"</span><span class="p">:</span> <span class="n">gre_v</span><span class="p">,</span>
+            <span class="s2">"GRE AW"</span><span class="p">:</span> <span class="n">gre_aw</span><span class="p">,</span>
+            <span class="s2">"Degree"</span><span class="p">:</span> <span class="n">degree</span><span class="p">,</span>
+        <span class="p">}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_status</span><span class="p">(</span><span class="n">decision_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Split 'Accepted on 15 Mar' into ('Accepted', '15 Mar')."""</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">_DECISION_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">decision_text</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">match</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">decision_text</span><span class="p">,</span> <span class="s2">""</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="s2">"Wait listed"</span> <span class="k">if</span> <span class="n">status</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"waitlisted"</span> <span class="k">else</span> <span class="n">status</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">status</span><span class="p">,</span> <span class="n">_clean_text</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"date"</span><span class="p">))</span>
+
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+    <span class="c1"># Orchestration                                                       #</span>
+    <span class="c1"># ------------------------------------------------------------------ #</span>
+<div class="viewcode-block" id="GradCafeScraper.scrape_data">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper.scrape_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">scrape_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">target_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30000</span><span class="p">,</span>
+        <span class="n">start_url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">max_pages</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">output</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">DEFAULT_OUTPUT</span><span class="p">,</span>
+        <span class="n">checkpoint</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">DEFAULT_CHECKPOINT</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Pull pages until ``target_rows`` entries are stored (resumable).</span>
+
+<span class="sd">        Existing records in ``output`` are loaded first.  The run continues</span>
+<span class="sd">        from the ``next_url`` stored in the checkpoint (the cursor link the</span>
+<span class="sd">        site handed us after the last completed page), or from ``start_url``</span>
+<span class="sd">        / page 1 when there is no checkpoint.  Duplicate entry URLs are</span>
+<span class="sd">        skipped.  Scraping stops as soon as the site blocks or rate-limits us,</span>
+<span class="sd">        returns an empty page, or offers no further "Next" link.</span>
+<span class="sd">        """</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="n">load_data</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+        <span class="n">seen_urls</span> <span class="o">=</span> <span class="p">{</span><span class="n">r</span><span class="p">[</span><span class="s2">"url"</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span> <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"url"</span><span class="p">)}</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_checkpoint</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">)</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pages_done"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="n">start_url</span> <span class="ow">or</span> <span class="n">state</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"next_url"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">build_survey_url</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">pages_done</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Resuming with </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span><span class="si">}</span><span class="s2"> records at page </span><span class="si">{</span><span class="n">page</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">inspect_url</span><span class="p">(</span><span class="n">url</span><span class="p">)[</span><span class="s1">'cursor'</span><span class="p">]</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">'first page'</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">target_rows</span> <span class="ow">and</span> <span class="p">(</span><span class="n">max_pages</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">pages_done</span> <span class="o">&lt;</span> <span class="n">max_pages</span><span class="p">):</span>
+            <span class="n">started</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fetch_page_html</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">page</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[stop] </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="k">break</span>
+
+            <span class="n">page_records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_page</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">page_records</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[stop] page </span><span class="si">{</span><span class="n">page</span><span class="si">}</span><span class="s2"> contained no entries"</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="k">break</span>
+
+            <span class="n">new</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">page_records</span> <span class="k">if</span> <span class="n">r</span><span class="p">[</span><span class="s2">"url"</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen_urls</span><span class="p">]</span>
+            <span class="n">seen_urls</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s2">"url"</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">new</span><span class="p">)</span>
+            <span class="n">records</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">new</span><span class="p">)</span>
+            <span class="n">next_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_next_url</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+
+            <span class="n">save_data</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">output</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write_checkpoint</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">,</span> <span class="n">pages_done</span><span class="o">=</span><span class="n">page</span><span class="p">,</span> <span class="n">next_url</span><span class="o">=</span><span class="n">next_url</span><span class="p">,</span> <span class="n">total</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">))</span>
+            <span class="n">pages_done</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"page </span><span class="si">{</span><span class="n">page</span><span class="si">:</span><span class="s2">5d</span><span class="si">}</span><span class="s2">: +</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">new</span><span class="p">)</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2"> (total </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span><span class="si">}</span><span class="s2">) in </span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">started</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">s"</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">next_url</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">"[stop] no further pages"</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="k">break</span>
+            <span class="n">url</span> <span class="o">=</span> <span class="n">next_url</span>
+            <span class="n">page</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">delay_seconds</span><span class="p">)</span>  <span class="c1"># polite throttling</span>
+
+        <span class="k">return</span> <span class="n">records</span></div>
+
+
+<div class="viewcode-block" id="GradCafeScraper.scrape_new_entries">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper.scrape_new_entries">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">scrape_new_entries</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">known_urls</span><span class="p">:</span> <span class="nb">set</span><span class="p">,</span>
+        <span class="n">max_pages</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+        <span class="n">output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Fetch entries that are not yet in ``known_urls`` (Module 3 Pull Data).</span>
+
+<span class="sd">        Grad Cafe lists newest submissions first, so we start at page 1 and</span>
+<span class="sd">        follow "Next" links; as soon as a page contributes no new entry we</span>
+<span class="sd">        have reached data we already hold and stop.  ``max_pages`` is a</span>
+<span class="sd">        safety cap.  Returns the new records (also saved to ``output`` when</span>
+<span class="sd">        given).  The site's polite-delay and stop-on-block behaviour is the</span>
+<span class="sd">        same as in ``scrape_data``.</span>
+<span class="sd">        """</span>
+        <span class="n">new_records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="n">build_survey_url</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">page</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_pages</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">html</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fetch_page_html</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">page</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"[stop] </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+                <span class="k">break</span>
+            <span class="n">page_records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_page</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+            <span class="n">fresh</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">page_records</span> <span class="k">if</span> <span class="n">r</span><span class="p">[</span><span class="s2">"url"</span><span class="p">]</span> <span class="ow">and</span> <span class="n">r</span><span class="p">[</span><span class="s2">"url"</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">known_urls</span><span class="p">]</span>
+            <span class="n">known_urls</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="s2">"url"</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">fresh</span><span class="p">)</span>
+            <span class="n">new_records</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">fresh</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"page </span><span class="si">{</span><span class="n">page</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">fresh</span><span class="p">)</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2"> new of </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">page_records</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="n">next_url</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_find_next_url</span><span class="p">(</span><span class="n">html</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">fresh</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">page_records</span> <span class="ow">or</span> <span class="n">next_url</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="n">url</span> <span class="o">=</span> <span class="n">next_url</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">delay_seconds</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">output</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">save_data</span><span class="p">(</span><span class="n">new_records</span><span class="p">,</span> <span class="n">output</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">new_records</span></div>
+
+
+<div class="viewcode-block" id="GradCafeScraper.parse_saved_html">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper.parse_saved_html">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parse_saved_html</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">html_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">output</span><span class="p">:</span> <span class="n">Path</span> <span class="o">=</span> <span class="n">DEFAULT_OUTPUT</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Offline mode: rebuild applicant_data.json from previously saved pages."""</span>
+        <span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">html_dir</span><span class="p">)</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"page_*.html"</span><span class="p">)):</span>
+            <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_page</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="n">rec</span><span class="p">[</span><span class="s2">"url"</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                    <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">rec</span><span class="p">[</span><span class="s2">"url"</span><span class="p">])</span>
+                    <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+        <span class="n">save_data</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">output</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"parsed </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span><span class="si">}</span><span class="s2"> records from </span><span class="si">{</span><span class="n">html_dir</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">records</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_checkpoint</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return the saved progress dict ({} when no checkpoint exists)."""</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">{}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_write_checkpoint</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">pages_done</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">next_url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">total</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">"pages_done"</span><span class="p">:</span> <span class="n">pages_done</span><span class="p">,</span> <span class="s2">"next_url"</span><span class="p">:</span> <span class="n">next_url</span><span class="p">,</span> <span class="s2">"total_records"</span><span class="p">:</span> <span class="n">total</span><span class="p">,</span>
+                        <span class="s2">"saved_at"</span><span class="p">:</span> <span class="n">time</span><span class="o">.</span><span class="n">ctime</span><span class="p">()},</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span>
+            <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">,</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="GradCafeScraper.close">
+<a class="viewcode-back" href="../api.html#scrape.GradCafeScraper.close">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Detach from Chrome (the user's window stays open)."""</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_driver</span><span class="o">.</span><span class="n">quit</span><span class="p">()</span>
+            <span class="k">finally</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_driver</span> <span class="o">=</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># CLI                                                                         #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_arg_parser</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">:</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="vm">__doc__</span><span class="p">,</span> <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--target"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">30000</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"stop once this many entries are saved"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--start-url"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"survey URL (with cursor) to start from; overrides the checkpoint"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--max-pages"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"load at most this many pages this run"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--delay"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"seconds to wait between pages"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--debugger"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">"127.0.0.1:9222"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"Chrome remote-debugging address"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--output"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">Path</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_OUTPUT</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--checkpoint"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">Path</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_CHECKPOINT</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--html-dir"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">Path</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">DEFAULT_HTML_DIR</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"where rendered pages are archived"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--no-html"</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">"store_true"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"do not archive rendered HTML"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--skip-robots"</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">"store_true"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"skip the robots.txt check (already verified)"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--from-html"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">Path</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"offline: parse saved pages instead of scraping"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">parser</span>
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../api.html#scrape.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">argv</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">_build_arg_parser</span><span class="p">()</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
+    <span class="n">scraper</span> <span class="o">=</span> <span class="n">GradCafeScraper</span><span class="p">(</span>
+        <span class="n">delay_seconds</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">delay</span><span class="p">,</span>
+        <span class="n">debugger_address</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">debugger</span><span class="p">,</span>
+        <span class="n">html_dir</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">no_html</span> <span class="k">else</span> <span class="n">args</span><span class="o">.</span><span class="n">html_dir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">from_html</span><span class="p">:</span>
+            <span class="n">scraper</span><span class="o">.</span><span class="n">parse_saved_html</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">from_html</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">output</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">skip_robots</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">scraper</span><span class="o">.</span><span class="n">check_robots</span><span class="p">():</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">"robots.txt does not permit scraping the survey pages - aborting."</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mi">1</span>
+        <span class="n">scraper</span><span class="o">.</span><span class="n">scrape_data</span><span class="p">(</span>
+            <span class="n">target_rows</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">target</span><span class="p">,</span>
+            <span class="n">start_url</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">start_url</span><span class="p">,</span>
+            <span class="n">max_pages</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">max_pages</span><span class="p">,</span>
+            <span class="n">output</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">output</span><span class="p">,</span>
+            <span class="n">checkpoint</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">checkpoint</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">scraper</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>  <span class="c1"># pragma: no cover</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

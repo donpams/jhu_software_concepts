@@ -1,0 +1,437 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>query_data &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../operations.html">Operational notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">query_data</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for query_data</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">query_data.py - Answer the Module 3 analysis questions with raw SQL.</span>
+
+<span class="sd">Every question is expressed as a single SQL statement executed through</span>
+<span class="sd">psycopg (v3).  Formatting rules from the assignment are applied when the</span>
+<span class="sd">results are printed: counts as whole numbers, percentages and averages with</span>
+<span class="sd">two decimals.</span>
+
+<span class="sd">The same question definitions are reused to build query_results.pdf</span>
+<span class="sd">(``make_query_results_pdf.py``), so the PDF always shows exactly the SQL that</span>
+<span class="sd">ran.</span>
+
+<span class="sd">Run::</span>
+
+<span class="sd">    python query_data.py</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">psycopg</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_database_url</span>
+
+<span class="c1"># Shared, case-insensitive matching fragments ----------------------------------</span>
+<span class="c1"># Status text is the cleaned Module 2 value ("Accepted", "Rejected", ...);</span>
+<span class="c1"># ILIKE keeps the match robust to capitalization.</span>
+<span class="n">ACCEPTED</span> <span class="o">=</span> <span class="s2">"status ILIKE 'accept%'"</span>
+<span class="n">FALL_2026</span> <span class="o">=</span> <span class="s2">"term ILIKE 'fall 2026'"</span>
+<span class="n">FALL_2025</span> <span class="o">=</span> <span class="s2">"term ILIKE 'fall 2025'"</span>
+<span class="n">CS_ORIGINAL</span> <span class="o">=</span> <span class="s2">"program ILIKE '</span><span class="si">%c</span><span class="s2">omputer science%'"</span>
+<span class="n">CS_LLM</span> <span class="o">=</span> <span class="s2">"llm_generated_program ILIKE '</span><span class="si">%c</span><span class="s2">omputer science%'"</span>
+<span class="n">MASTERS</span> <span class="o">=</span> <span class="s2">"(degree ILIKE 'master%' OR degree ILIKE 'ms' OR degree ILIKE 'm.s.%')"</span>
+<span class="n">PHD</span> <span class="o">=</span> <span class="s2">"degree ILIKE 'phd'"</span>
+<span class="c1"># "Provides the metric" = a value that is possible on that metric's scale.</span>
+<span class="c1"># Grad Cafe's badge is just labelled "GRE", so ~60 % of the GRE values are</span>
+<span class="c1"># combined totals (260-340), and placeholders such as 99.99 / 9.99 appear in</span>
+<span class="c1"># the AW and GPA fields.  Averaging those would be meaningless.</span>
+<span class="n">GPA_VALID</span> <span class="o">=</span> <span class="s2">"gpa &gt; 0 AND gpa &lt;= 4.0"</span>
+<span class="n">GRE_VALID</span> <span class="o">=</span> <span class="s2">"gre BETWEEN 130 AND 170"</span>
+<span class="n">GRE_V_VALID</span> <span class="o">=</span> <span class="s2">"gre_v BETWEEN 130 AND 170"</span>
+<span class="n">GRE_AW_VALID</span> <span class="o">=</span> <span class="s2">"gre_aw BETWEEN 0 AND 6"</span>
+<span class="c1"># Q8 universities, matched inside the original "program, university" text.</span>
+<span class="c1"># \m ... \M are PostgreSQL word boundaries so "MIT" does not match "Summit".</span>
+<span class="n">FOUR_UNIS_ORIGINAL</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"(program ILIKE '</span><span class="si">%g</span><span class="s2">eorgetown%' "</span>
+    <span class="s2">" OR program ILIKE '%massachusetts institute of technology%' "</span>
+    <span class="s2">" OR program ~* '</span><span class="se">\\</span><span class="s2">mMIT</span><span class="se">\\</span><span class="s2">M' "</span>
+    <span class="s2">" OR program ILIKE '</span><span class="si">%s</span><span class="s2">tanford%' "</span>
+    <span class="s2">" OR program ILIKE '</span><span class="si">%c</span><span class="s2">arnegie mellon%')"</span>
+<span class="p">)</span>
+<span class="c1"># Q9 universities, matched against the LLM-standardized canonical names.</span>
+<span class="n">FOUR_UNIS_LLM</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"(llm_generated_university ILIKE 'georgetown university' "</span>
+    <span class="s2">" OR llm_generated_university ILIKE 'massachusetts institute of technology' "</span>
+    <span class="s2">" OR llm_generated_university ILIKE 'stanford university' "</span>
+    <span class="s2">" OR llm_generated_university ILIKE 'carnegie mellon university')"</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="Question">
+<a class="viewcode-back" href="../api.html#query_data.Question">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Question</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One analysis question: the prose, the SQL, and how to present it."""</span>
+
+    <span class="n">number</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">sql</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">explanation</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="c1"># kind decides formatting: count | percent | average | averages | table</span>
+    <span class="n">kind</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"count"</span>
+    <span class="n">labels</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>  <span class="c1"># for "averages"/"table"</span></div>
+
+
+
+<span class="n">QUESTIONS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Question</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">1</span><span class="p">,</span> <span class="s2">"Fall 2026 applicant count"</span><span class="p">,</span>
+        <span class="s2">"How many entries in the database are from applicants who applied for Fall 2026?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"SELECT COUNT(*) FROM applicants WHERE </span><span class="si">{</span><span class="n">FALL_2026</span><span class="si">}</span><span class="s2">;"</span><span class="p">,</span>
+        <span class="s2">"Counts every row whose term column reads 'Fall 2026' (case-insensitive ILIKE)."</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">2</span><span class="p">,</span> <span class="s2">"Percent international"</span><span class="p">,</span>
+        <span class="s2">"Among entries that provide a nationality classification, what percentage are international students?"</span><span class="p">,</span>
+<span class="w">        </span><span class="sd">"""SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE us_or_international ILIKE 'international')</span>
+<span class="sd">             / NULLIF(COUNT(*), 0), 2)</span>
+<span class="sd">FROM applicants</span>
+<span class="sd">WHERE us_or_international IS NOT NULL AND BTRIM(us_or_international) &lt;&gt; '';"""</span><span class="p">,</span>
+        <span class="s2">"The WHERE clause restricts the denominator to rows with a usable nationality value "</span>
+        <span class="s2">"(NULL/blank excluded). The FILTER clause counts only 'International' rows for the numerator; "</span>
+        <span class="s2">"'American' and 'Other' therefore fall in the denominator but not the numerator. NULLIF guards "</span>
+        <span class="s2">"against division by zero."</span><span class="p">,</span>
+        <span class="n">kind</span><span class="o">=</span><span class="s2">"percent"</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">3</span><span class="p">,</span> <span class="s2">"Average GPA / GRE / GRE V / GRE AW"</span><span class="p">,</span>
+        <span class="s2">"What are the average GPA, GRE Quantitative, GRE Verbal, and GRE Analytical Writing scores of applicants who provide each metric?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT ROUND(AVG(gpa)    FILTER (WHERE </span><span class="si">{</span><span class="n">GPA_VALID</span><span class="si">}</span><span class="s2">)::numeric, 2)    AS avg_gpa,</span>
+<span class="s2">       ROUND(AVG(gre)    FILTER (WHERE </span><span class="si">{</span><span class="n">GRE_VALID</span><span class="si">}</span><span class="s2">)::numeric, 2)    AS avg_gre,</span>
+<span class="s2">       ROUND(AVG(gre_v)  FILTER (WHERE </span><span class="si">{</span><span class="n">GRE_V_VALID</span><span class="si">}</span><span class="s2">)::numeric, 2)  AS avg_gre_v,</span>
+<span class="s2">       ROUND(AVG(gre_aw) FILTER (WHERE </span><span class="si">{</span><span class="n">GRE_AW_VALID</span><span class="si">}</span><span class="s2">)::numeric, 2) AS avg_gre_aw</span>
+<span class="s2">FROM applicants;"""</span><span class="p">,</span>
+        <span class="s2">"Each average is computed separately over only the applicants who supplied that metric: AVG() "</span>
+        <span class="s2">"ignores NULLs, and the FILTER clause additionally requires the value to be a possible score on "</span>
+        <span class="s2">"that scale (GRE Q/V 130-170, GRE AW 0-6, GPA 0-4.0). An applicant missing GRE AW still counts "</span>
+        <span class="s2">"toward GPA, GRE and GRE V. Without the range filter the 'GRE' column averages 261 because most "</span>
+        <span class="s2">"applicants typed their combined GRE total into it."</span><span class="p">,</span>
+        <span class="n">kind</span><span class="o">=</span><span class="s2">"averages"</span><span class="p">,</span>
+        <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="s2">"Average GPA"</span><span class="p">,</span> <span class="s2">"Average GRE Quantitative"</span><span class="p">,</span> <span class="s2">"Average GRE Verbal"</span><span class="p">,</span> <span class="s2">"Average GRE Analytical Writing"</span><span class="p">],</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">4</span><span class="p">,</span> <span class="s2">"Average GPA of American Fall 2026 applicants"</span><span class="p">,</span>
+        <span class="s2">"What is the average GPA of American applicants who applied for Fall 2026?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT ROUND(AVG(gpa)::numeric, 2)</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE </span><span class="si">{</span><span class="n">FALL_2026</span><span class="si">}</span>
+<span class="s2">  AND us_or_international ILIKE 'american'</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">GPA_VALID</span><span class="si">}</span><span class="s2">;"""</span><span class="p">,</span>
+        <span class="s2">"Filters to Fall 2026 rows classified as American that report a GPA on the 4.0 scale "</span>
+        <span class="s2">"(the range test also excludes NULLs)."</span><span class="p">,</span>
+        <span class="n">kind</span><span class="o">=</span><span class="s2">"average"</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">5</span><span class="p">,</span> <span class="s2">"Fall 2025 acceptance percentage"</span><span class="p">,</span>
+        <span class="s2">"What percentage of Fall 2025 entries are acceptances?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE </span><span class="si">{</span><span class="n">ACCEPTED</span><span class="si">}</span><span class="s2">) / NULLIF(COUNT(*), 0), 2)</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE </span><span class="si">{</span><span class="n">FALL_2025</span><span class="si">}</span><span class="s2">;"""</span><span class="p">,</span>
+        <span class="s2">"Denominator: all Fall 2025 entries. Numerator: those whose cleaned status begins with "</span>
+        <span class="s2">"'Accept' (case-insensitive). Multiplying by 100.0 forces decimal arithmetic."</span><span class="p">,</span>
+        <span class="n">kind</span><span class="o">=</span><span class="s2">"percent"</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">6</span><span class="p">,</span> <span class="s2">"Average GPA of accepted Fall 2026 applicants"</span><span class="p">,</span>
+        <span class="s2">"What is the average GPA of accepted applicants who applied for Fall 2026?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT ROUND(AVG(gpa)::numeric, 2)</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE </span><span class="si">{</span><span class="n">FALL_2026</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">ACCEPTED</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">GPA_VALID</span><span class="si">}</span><span class="s2">;"""</span><span class="p">,</span>
+        <span class="s2">"Same shape as Question 4 but the second filter is on status instead of nationality."</span><span class="p">,</span>
+        <span class="n">kind</span><span class="o">=</span><span class="s2">"average"</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">7</span><span class="p">,</span> <span class="s2">"JHU Computer Science master's entries"</span><span class="p">,</span>
+        <span class="s2">"How many entries are from applicants who applied to Johns Hopkins University for a master's degree in Computer Science?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT COUNT(*)</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE (program ILIKE '%johns hopkins%' OR program ILIKE '%john hopkins%' OR program ~* '</span><span class="se">\\</span><span class="s2">mJHU</span><span class="se">\\</span><span class="s2">M')</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">CS_ORIGINAL</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">MASTERS</span><span class="si">}</span><span class="s2">;"""</span><span class="p">,</span>
+        <span class="s2">"Uses the original program text. The university test accepts 'Johns Hopkins', the common "</span>
+        <span class="s2">"misspelling 'John Hopkins', and the whole-word abbreviation 'JHU'; the program test looks for "</span>
+        <span class="s2">"'computer science' anywhere in the text; the degree test accepts Masters/MS variants."</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">8</span><span class="p">,</span> <span class="s2">"Fall 2026 CS PhD acceptances at four universities (original fields)"</span><span class="p">,</span>
+        <span class="s2">"How many Fall 2026 entries are acceptances from applicants applying for a PhD in Computer Science at Georgetown, MIT, Stanford, or Carnegie Mellon?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT COUNT(*)</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE </span><span class="si">{</span><span class="n">FALL_2026</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">ACCEPTED</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">PHD</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">CS_ORIGINAL</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">FOUR_UNIS_ORIGINAL</span><span class="si">}</span><span class="s2">;"""</span><span class="p">,</span>
+        <span class="s2">"All five restrictions are ANDed together. The university clause matches the original "</span>
+        <span class="s2">"program text with ILIKE for the spelled-out names and a whole-word regex for 'MIT'."</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">9</span><span class="p">,</span> <span class="s2">"Same as Q8 using the LLM-standardized fields"</span><span class="p">,</span>
+        <span class="s2">"Repeat Question 8 identifying the university and program with llm_generated_program / llm_generated_university."</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT COUNT(*)</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE </span><span class="si">{</span><span class="n">FALL_2026</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">ACCEPTED</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">PHD</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">CS_LLM</span><span class="si">}</span>
+<span class="s2">  AND </span><span class="si">{</span><span class="n">FOUR_UNIS_LLM</span><span class="si">}</span><span class="s2">;"""</span><span class="p">,</span>
+        <span class="s2">"Term, status and degree still come from the original fields; program and university now use "</span>
+        <span class="s2">"the LLM-standardized columns, so abbreviations, typos and campus variants that the free-text "</span>
+        <span class="s2">"search in Q8 could miss (or over-match) are resolved to canonical names first."</span><span class="p">,</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">10</span><span class="p">,</span> <span class="s2">"Acceptance rate by degree type (original question 1)"</span><span class="p">,</span>
+        <span class="s2">"Do PhD applicants report a different acceptance rate than master's applicants? For each degree type with at least 500 entries, what percentage of entries are acceptances?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT degree,</span>
+<span class="s2">       COUNT(*) AS entries,</span>
+<span class="s2">       ROUND(100.0 * COUNT(*) FILTER (WHERE </span><span class="si">{</span><span class="n">ACCEPTED</span><span class="si">}</span><span class="s2">) / COUNT(*), 2) AS accept_pct</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE degree IS NOT NULL</span>
+<span class="s2">GROUP BY degree</span>
+<span class="s2">HAVING COUNT(*) &gt;= 500</span>
+<span class="s2">ORDER BY entries DESC;"""</span><span class="p">,</span>
+        <span class="s2">"Groups all rows by degree, keeps only degree types with a meaningful sample (&gt;= 500 rows), "</span>
+        <span class="s2">"and computes the share of accepted entries within each group with a FILTERed count."</span><span class="p">,</span>
+        <span class="n">kind</span><span class="o">=</span><span class="s2">"table"</span><span class="p">,</span>
+        <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="s2">"Degree"</span><span class="p">,</span> <span class="s2">"Entries"</span><span class="p">,</span> <span class="s2">"Acceptance %"</span><span class="p">],</span>
+    <span class="p">),</span>
+    <span class="n">Question</span><span class="p">(</span>
+        <span class="mi">11</span><span class="p">,</span> <span class="s2">"Most-reported universities for Fall 2026 (original question 2)"</span><span class="p">,</span>
+        <span class="s2">"Which ten universities have the most Fall 2026 entries, and what is the acceptance percentage and average reported GPA at each?"</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">"""SELECT llm_generated_university AS university,</span>
+<span class="s2">       COUNT(*) AS entries,</span>
+<span class="s2">       ROUND(100.0 * COUNT(*) FILTER (WHERE </span><span class="si">{</span><span class="n">ACCEPTED</span><span class="si">}</span><span class="s2">) / COUNT(*), 2) AS accept_pct,</span>
+<span class="s2">       ROUND(AVG(gpa) FILTER (WHERE </span><span class="si">{</span><span class="n">GPA_VALID</span><span class="si">}</span><span class="s2">)::numeric, 2) AS avg_gpa</span>
+<span class="s2">FROM applicants</span>
+<span class="s2">WHERE </span><span class="si">{</span><span class="n">FALL_2026</span><span class="si">}</span>
+<span class="s2">  AND llm_generated_university IS NOT NULL</span>
+<span class="s2">  AND llm_generated_university &lt;&gt; 'Unknown'</span>
+<span class="s2">GROUP BY llm_generated_university</span>
+<span class="s2">ORDER BY entries DESC</span>
+<span class="s2">LIMIT 10;"""</span><span class="p">,</span>
+        <span class="s2">"Uses the LLM-standardized university so spelling variants collapse into one group, "</span>
+        <span class="s2">"aggregates Fall 2026 rows per university, and ranks by volume. AVG(gpa) again uses only rows "</span>
+        <span class="s2">"that reported a GPA."</span><span class="p">,</span>
+        <span class="n">kind</span><span class="o">=</span><span class="s2">"table"</span><span class="p">,</span>
+        <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="s2">"University"</span><span class="p">,</span> <span class="s2">"Entries"</span><span class="p">,</span> <span class="s2">"Acceptance %"</span><span class="p">,</span> <span class="s2">"Avg GPA"</span><span class="p">],</span>
+    <span class="p">),</span>
+<span class="p">]</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># Execution + formatting                                                      #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="run_question">
+<a class="viewcode-back" href="../api.html#query_data.run_question">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_question</span><span class="p">(</span><span class="n">conn</span><span class="p">:</span> <span class="n">psycopg</span><span class="o">.</span><span class="n">Connection</span><span class="p">,</span> <span class="n">question</span><span class="p">:</span> <span class="n">Question</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Execute one question's SQL and return the raw fetched value(s)."""</span>
+    <span class="k">with</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span> <span class="k">as</span> <span class="n">cur</span><span class="p">:</span>
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">question</span><span class="o">.</span><span class="n">sql</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">question</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">"table"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rows</span>
+    <span class="k">if</span> <span class="n">question</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">"averages"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">rows</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">rows</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="fmt_count">
+<a class="viewcode-back" href="../api.html#query_data.fmt_count">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fmt_count</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<div class="viewcode-block" id="fmt_percent">
+<a class="viewcode-back" href="../api.html#query_data.fmt_percent">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fmt_percent</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="s2">"n/a"</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%"</span></div>
+
+
+
+<div class="viewcode-block" id="fmt_average">
+<a class="viewcode-back" href="../api.html#query_data.fmt_average">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fmt_average</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="s2">"n/a"</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<div class="viewcode-block" id="format_result">
+<a class="viewcode-back" href="../api.html#query_data.format_result">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">format_result</span><span class="p">(</span><span class="n">question</span><span class="p">:</span> <span class="n">Question</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Turn a raw result into the lines printed on the console / PDF / webpage."""</span>
+    <span class="k">if</span> <span class="n">question</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">"count"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">question</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">fmt_count</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">question</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">"percent"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">question</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">fmt_percent</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">question</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">"average"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">question</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">fmt_average</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">question</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="s2">"averages"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">fmt_average</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">question</span><span class="o">.</span><span class="n">labels</span><span class="p">,</span> <span class="n">value</span><span class="p">)]</span>
+    <span class="c1"># table: header + rows, with per-column formatting by label</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"  "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">question</span><span class="o">.</span><span class="n">labels</span><span class="p">)]</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">value</span><span class="p">:</span>
+        <span class="n">cells</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">cell</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">question</span><span class="o">.</span><span class="n">labels</span><span class="p">,</span> <span class="n">row</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">label</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"%"</span><span class="p">):</span>
+                <span class="n">cells</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fmt_percent</span><span class="p">(</span><span class="n">cell</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="n">label</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"Avg"</span><span class="p">):</span>
+                <span class="n">cells</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fmt_average</span><span class="p">(</span><span class="n">cell</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="n">label</span> <span class="o">==</span> <span class="s2">"Entries"</span><span class="p">:</span>
+                <span class="n">cells</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">fmt_count</span><span class="p">(</span><span class="n">cell</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cells</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">cell</span><span class="p">))</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"  "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cells</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">lines</span></div>
+
+
+
+<div class="viewcode-block" id="run_all">
+<a class="viewcode-back" href="../api.html#query_data.run_all">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_all</span><span class="p">(</span><span class="n">database_url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Run every question and return {number: raw_result}."""</span>
+    <span class="n">results</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">with</span> <span class="n">psycopg</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">database_url</span> <span class="ow">or</span> <span class="n">get_database_url</span><span class="p">())</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">question</span> <span class="ow">in</span> <span class="n">QUESTIONS</span><span class="p">:</span>
+            <span class="n">results</span><span class="p">[</span><span class="n">question</span><span class="o">.</span><span class="n">number</span><span class="p">]</span> <span class="o">=</span> <span class="n">run_question</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">question</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">results</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../api.html#query_data.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">run_all</span><span class="p">()</span>
+    <span class="k">except</span> <span class="n">psycopg</span><span class="o">.</span><span class="n">OperationalError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"error: could not connect to PostgreSQL (</span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">)"</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mi">2</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"Grad Cafe analysis - raw SQL (psycopg)</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"="</span> <span class="o">*</span> <span class="mi">40</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">question</span> <span class="ow">in</span> <span class="n">QUESTIONS</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Q</span><span class="si">{</span><span class="n">question</span><span class="o">.</span><span class="n">number</span><span class="si">}</span><span class="s2">. </span><span class="si">{</span><span class="n">question</span><span class="o">.</span><span class="n">text</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">format_result</span><span class="p">(</span><span class="n">question</span><span class="p">,</span> <span class="n">results</span><span class="p">[</span><span class="n">question</span><span class="o">.</span><span class="n">number</span><span class="p">]):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">"   "</span> <span class="o">+</span> <span class="n">line</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">question</span><span class="o">.</span><span class="n">number</span> <span class="o">==</span> <span class="mi">9</span><span class="p">:</span>
+            <span class="n">q8</span><span class="p">,</span> <span class="n">q9</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="mi">8</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="mi">9</span><span class="p">])</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"   Original-field count: </span><span class="si">{</span><span class="n">q8</span><span class="si">}</span><span class="se">\n</span><span class="s2">   LLM-field count: </span><span class="si">{</span><span class="n">q9</span><span class="si">}</span><span class="se">\n</span><span class="s2">   Difference: </span><span class="si">{</span><span class="n">q9</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">q8</span><span class="si">:</span><span class="s2">+d</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>  <span class="c1"># pragma: no cover</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

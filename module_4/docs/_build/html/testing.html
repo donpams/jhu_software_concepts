@@ -1,0 +1,281 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Testing guide &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Operational notes" href="operations.html" />
+    <link rel="prev" title="API reference" href="api.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Testing guide</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#running">Running</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#markers">Markers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#selectors-the-tests-rely-on">Selectors the tests rely on</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#fixtures-and-test-doubles-tests-conftest-py">Fixtures and test doubles (<code class="docutils literal notranslate"><span class="pre">tests/conftest.py</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#design-rules-the-suite-follows">Design rules the suite follows</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="operations.html">Operational notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Testing guide</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/testing.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="testing-guide">
+<h1>Testing guide<a class="headerlink" href="#testing-guide" title="Link to this heading"></a></h1>
+<p>The suite lives in <code class="docutils literal notranslate"><span class="pre">module_4/tests</span></code> and runs in a few seconds against a real
+PostgreSQL database with <strong>no network access</strong>: the scraper is always replaced
+by a fake, and the Selenium driver by an in-memory stand-in.</p>
+<section id="running">
+<h2>Running<a class="headerlink" href="#running" title="Link to this heading"></a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">TEST_DATABASE_URL</span><span class="o">=</span>postgresql://localhost:5432/gradcafe_test<span class="w">   </span><span class="c1"># throwaway DB!</span>
+<span class="nb">cd</span><span class="w"> </span>&lt;repository<span class="w"> </span>root&gt;
+pytest<span class="w"> </span>module_4/tests<span class="w"> </span>-m<span class="w"> </span><span class="s2">"web or buttons or analysis or db or integration"</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">pytest.ini</span></code> (in <code class="docutils literal notranslate"><span class="pre">module_4</span></code>) supplies
+<code class="docutils literal notranslate"><span class="pre">--cov=module_4/src</span> <span class="pre">--cov-report=term-missing</span> <span class="pre">--cov-fail-under=100</span></code> and
+<code class="docutils literal notranslate"><span class="pre">pythonpath</span> <span class="pre">=</span> <span class="pre">src</span></code>.  Every module under <code class="docutils literal notranslate"><span class="pre">src</span></code> is covered; <code class="docutils literal notranslate"><span class="pre">.coveragerc</span></code>
+only excludes <code class="docutils literal notranslate"><span class="pre">if</span> <span class="pre">__name__</span> <span class="pre">==</span> <span class="pre">&quot;__main__&quot;</span></code> guards.  The instructor-provided
+<code class="docutils literal notranslate"><span class="pre">llm_hosting/</span></code> package (llama-cpp-python plus a model download) lives beside
+<code class="docutils literal notranslate"><span class="pre">src</span></code>, not inside it; <code class="docutils literal notranslate"><span class="pre">standardize.py</span></code> reuses its canonical lists.</p>
+</section>
+<section id="markers">
+<h2>Markers<a class="headerlink" href="#markers" title="Link to this heading"></a></h2>
+<p>Every test carries at least one marker; the expression above selects the whole
+suite and <code class="docutils literal notranslate"><span class="pre">-m</span> <span class="pre">&quot;not</span> <span class="pre">(web</span> <span class="pre">or</span> <span class="pre">buttons</span> <span class="pre">or</span> <span class="pre">analysis</span> <span class="pre">or</span> <span class="pre">db</span> <span class="pre">or</span> <span class="pre">integration)&quot;</span></code>
+selects nothing.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 18.0%" />
+<col style="width: 82.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Marker</p></th>
+<th class="head"><p>Used for</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">web</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">test_flask_page.py</span></code> – app factory, registered routes, page structure.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">buttons</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">test_buttons.py</span></code> – <code class="docutils literal notranslate"><span class="pre">/pull-data</span></code> and <code class="docutils literal notranslate"><span class="pre">/update-analysis</span></code> behaviour,
+busy gating (409), error path, background mode.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">analysis</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">test_analysis_format.py</span></code> – “Answer:” labels and two-decimal
+percentages; also the pure parsing/cleaning unit tests in
+<code class="docutils literal notranslate"><span class="pre">test_scrape.py</span></code> and <code class="docutils literal notranslate"><span class="pre">test_clean_standardize.py</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">db</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">test_db_insert.py</span></code> and <code class="docutils literal notranslate"><span class="pre">test_loader_queries_pipeline.py</span></code> – schema,
+inserts, idempotency, the query functions and SQL/ORM questions.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">integration</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">test_integration_end_to_end.py</span></code> – pull → update → render, repeated
+pulls; plus the paging/browser-plumbing flows in <code class="docutils literal notranslate"><span class="pre">test_scrape.py</span></code> and
+the pipeline tests.</p></td>
+</tr>
+</tbody>
+</table>
+<p>Run one group with e.g. <code class="docutils literal notranslate"><span class="pre">pytest</span> <span class="pre">module_4/tests</span> <span class="pre">-m</span> <span class="pre">buttons</span> <span class="pre">--no-cov</span></code>.</p>
+</section>
+<section id="selectors-the-tests-rely-on">
+<h2>Selectors the tests rely on<a class="headerlink" href="#selectors-the-tests-rely-on" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 40.0%" />
+<col style="width: 60.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Selector / text</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">[data-testid=&quot;pull-data-btn&quot;]</span></code></p></td>
+<td><p>The <strong>Pull Data</strong> button (<code class="docutils literal notranslate"><span class="pre">disabled</span></code> while a pull runs).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">[data-testid=&quot;update-analysis-btn&quot;]</span></code></p></td>
+<td><p>The <strong>Update Analysis</strong> button.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">[data-testid=&quot;page-title&quot;]</span></code></p></td>
+<td><p>Heading containing the word “Analysis”.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">[data-testid=&quot;analysis-results&quot;]</span></code></p></td>
+<td><p>Grid holding the required-question cards.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">[data-testid=&quot;pull-status&quot;]</span></code></p></td>
+<td><p>Banner showing busy / last-pull state.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Answer:</span></code></p></td>
+<td><p>Label preceding every rendered analysis value.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">^\d{1,3}(?:,\d{3})*\.\d{2}%$</span></code></p></td>
+<td><p>Regex every percentage on the page must match.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="fixtures-and-test-doubles-tests-conftest-py">
+<h2>Fixtures and test doubles (<code class="docutils literal notranslate"><span class="pre">tests/conftest.py</span></code>)<a class="headerlink" href="#fixtures-and-test-doubles-tests-conftest-py" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 22.0%" />
+<col style="width: 78.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>What it provides</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">database_url</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TEST_DATABASE_URL</span></code> (falls back to <code class="docutils literal notranslate"><span class="pre">DATABASE_URL</span></code>).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">db</span></code></p></td>
+<td><p>A psycopg connection to the test database with the <code class="docutils literal notranslate"><span class="pre">applicants</span></code> table
+created and <strong>truncated</strong> before the test.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make_record(p_id,</span> <span class="pre">**overrides)</span></code></p></td>
+<td><p>Builds one raw record in the shape <code class="docutils literal notranslate"><span class="pre">scrape.py</span></code> produces.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">sample_records</span></code></p></td>
+<td><p>Four such records (Fall 2025/2026, accepted/rejected/wait-listed,
+American/International/blank, with and without GRE scores).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">FakeScraper(records)</span></code> / <code class="docutils literal notranslate"><span class="pre">fake_scraper</span></code></p></td>
+<td><p>Callable used in place of <code class="docutils literal notranslate"><span class="pre">pull_new_data.default_scrape</span></code>; returns
+only records whose URL is not already known and records each call.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">failing_scraper</span></code></p></td>
+<td><p>Raises <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> – the error-path double.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">busy</span></code></p></td>
+<td><p>A fresh <a class="reference internal" href="api.html#flask_app.BusyState" title="flask_app.BusyState"><code class="xref py py-class docutils literal notranslate"><span class="pre">flask_app.BusyState</span></code></a>; <code class="docutils literal notranslate"><span class="pre">busy.force(True)</span></code> simulates a
+pull in progress without sleeping.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">app</span></code> / <code class="docutils literal notranslate"><span class="pre">client</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">create_app(database_url=...,</span> <span class="pre">scrape_fn=fake_scraper,</span>
+<span class="pre">run_in_background=False,</span> <span class="pre">busy_state=busy)</span></code> and its Flask test client.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">FakeDriver</span></code> (<code class="docutils literal notranslate"><span class="pre">test_scrape.py</span></code>)</p></td>
+<td><p>Stand-in for a Selenium WebDriver: serves canned HTML pages, records
+visited URLs, writes a tiny PNG for <code class="docutils literal notranslate"><span class="pre">save_screenshot</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tests/fixtures/survey_page.html</span></code></p></td>
+<td><p>A trimmed copy of a real Grad Cafe survey page (four entries, GRE badges,
+comments, cursor “Next” link) used by the parser tests.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="design-rules-the-suite-follows">
+<h2>Design rules the suite follows<a class="headerlink" href="#design-rules-the-suite-follows" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>No sleeps.</strong> Busy state is an object (<code class="docutils literal notranslate"><span class="pre">BusyState</span></code>) that tests set
+directly; the background-thread test <code class="docutils literal notranslate"><span class="pre">join()</span></code>s the thread.</p></li>
+<li><p><strong>No live internet.</strong> Scraper and driver are always faked.</p></li>
+<li><p><strong>Deterministic data.</strong> Every test starts from an empty table and seeds
+exactly the rows it asserts on.</p></li>
+<li><p><strong>Error paths.</strong> A failing scraper yields <code class="docutils literal notranslate"><span class="pre">500</span> <span class="pre">{&quot;ok&quot;:</span> <span class="pre">false}</span></code>, releases the
+busy flag and leaves the table empty.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="api.html" class="btn btn-neutral float-left" title="API reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="operations.html" class="btn btn-neutral float-right" title="Operational notes" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

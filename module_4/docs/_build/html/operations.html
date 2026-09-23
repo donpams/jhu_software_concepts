@@ -1,0 +1,164 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operational notes &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Troubleshooting" href="troubleshooting.html" />
+    <link rel="prev" title="Testing guide" href="testing.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing guide</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Operational notes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#busy-state-policy">Busy-state policy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#idempotency-strategy">Idempotency strategy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#data-conventions">Data conventions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Operational notes</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/operations.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="operational-notes">
+<h1>Operational notes<a class="headerlink" href="#operational-notes" title="Link to this heading"></a></h1>
+<section id="busy-state-policy">
+<h2>Busy-state policy<a class="headerlink" href="#busy-state-policy" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>One pull at a time.  <code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/pull-data</span></code> acquires <a class="reference internal" href="api.html#flask_app.BusyState" title="flask_app.BusyState"><code class="xref py py-class docutils literal notranslate"><span class="pre">flask_app.BusyState</span></code></a>
+atomically; a second request while busy is refused with
+<code class="docutils literal notranslate"><span class="pre">409</span> <span class="pre">{&quot;busy&quot;:</span> <span class="pre">true}</span></code> and does not start anything.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">POST</span> <span class="pre">/update-analysis</span></code> never interferes with a running pull: while busy it
+answers <code class="docutils literal notranslate"><span class="pre">409</span> <span class="pre">{&quot;busy&quot;:</span> <span class="pre">true}</span></code> and performs no query; otherwise it re-queries
+and answers <code class="docutils literal notranslate"><span class="pre">200</span> <span class="pre">{&quot;ok&quot;:</span> <span class="pre">true}</span></code>.  It never starts a scrape.</p></li>
+<li><p>The flag is always released in a <code class="docutils literal notranslate"><span class="pre">finally</span></code> block, including when the pull
+fails, so an error can never leave the page permanently “busy”.</p></li>
+<li><p>The page polls <code class="docutils literal notranslate"><span class="pre">GET</span> <span class="pre">/status</span></code> every three seconds while a pull runs and
+re-enables the button when it finishes.</p></li>
+<li><p>The state is in-process.  Running several Flask workers would need a shared
+lock (for example a PostgreSQL advisory lock); the single-process deployment
+used here does not.</p></li>
+</ul>
+</section>
+<section id="idempotency-strategy">
+<h2>Idempotency strategy<a class="headerlink" href="#idempotency-strategy" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Uniqueness key:</strong> <code class="docutils literal notranslate"><span class="pre">p_id</span></code> = the numeric id in the Grad Cafe entry URL,
+the table’s primary key; <code class="docutils literal notranslate"><span class="pre">url</span></code> is additionally <code class="docutils literal notranslate"><span class="pre">UNIQUE</span></code>.</p></li>
+<li><p>Inserts use <code class="docutils literal notranslate"><span class="pre">ON</span> <span class="pre">CONFLICT</span> <span class="pre">(p_id)</span> <span class="pre">DO</span> <span class="pre">NOTHING</span></code>: re-loading the seed file,
+pulling the same entries twice, or overlapping pulls never duplicate or
+overwrite a row.  Existing rows are never updated by the pipeline.</p></li>
+<li><p>The scraper stops at the first page that contributes no unseen entry, so a
+pull normally reads only the pages that hold new submissions.</p></li>
+<li><p>Rows without a parseable <code class="docutils literal notranslate"><span class="pre">/result/&lt;id&gt;</span></code> URL are skipped (they cannot be
+identified uniquely).</p></li>
+</ul>
+</section>
+<section id="data-conventions">
+<h2>Data conventions<a class="headerlink" href="#data-conventions" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>Missing values are stored as SQL <code class="docutils literal notranslate"><span class="pre">NULL</span></code>; optional metrics never make an
+insert fail.</p></li>
+<li><p>A metric counts as <em>provided</em> only when the value is possible on its scale
+(GRE Q/V 130–170, GRE AW 0–6, GPA 0–4.0).  Grad Cafe’s badge is labelled
+just “GRE” and is frequently filled with a combined total, and placeholders
+such as <code class="docutils literal notranslate"><span class="pre">9.99</span></code> occur; the range rule keeps the averages meaningful.</p></li>
+<li><p>Percentages are rendered with exactly two decimals everywhere (console, PDF
+and web page); counts are whole numbers.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="testing.html" class="btn btn-neutral float-left" title="Testing guide" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="troubleshooting.html" class="btn btn-neutral float-right" title="Troubleshooting" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

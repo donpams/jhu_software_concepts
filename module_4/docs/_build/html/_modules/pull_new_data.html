@@ -1,0 +1,238 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pull_new_data &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../operations.html">Operational notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">pull_new_data</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for pull_new_data</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">pull_new_data.py - Fetch newly posted Grad Cafe entries and add them to PostgreSQL.</span>
+
+<span class="sd">The pipeline behind the web page's "Pull Data" button (also runnable from</span>
+<span class="sd">the command line).  Every external dependency is injectable so the pipeline</span>
+<span class="sd">can be exercised in tests without a browser, the network or the local LLM:</span>
+
+<span class="sd">* ``scrape_fn(known_urls) -&gt; list[dict]`` - the raw scraper.  The default</span>
+<span class="sd">  attaches to the user's Chrome through :class:`scrape.GradCafeScraper`.</span>
+<span class="sd">* ``standardize_fn(rows) -&gt; list[dict]`` - adds the two ``llm-generated-*``</span>
+<span class="sd">  fields.  Defaults to the rule-based normalizer (:mod:`standardize`); pass</span>
+<span class="sd">  :func:`clean.standardize_with_llm` to use the local TinyLlama instead.</span>
+<span class="sd">* ``database_url`` - overrides ``DATABASE_URL``.</span>
+
+<span class="sd">Steps: read the entry URLs already stored -&gt; scrape from the newest page</span>
+<span class="sd">until an already-known entry appears -&gt; :func:`clean.clean_data` -&gt;</span>
+<span class="sd">standardize -&gt; :func:`load_data.load_records` (``ON CONFLICT DO NOTHING``,</span>
+<span class="sd">so existing rows are never modified and re-pulling the same entries adds</span>
+<span class="sd">nothing).</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">argparse</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">psycopg</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">load_data</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">clean</span><span class="w"> </span><span class="kn">import</span> <span class="n">clean_data</span><span class="p">,</span> <span class="n">standardize_rules_only</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">config</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_database_url</span>
+
+<span class="n">ScrapeFn</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span>
+<span class="n">StandardizeFn</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]],</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span>
+
+
+<div class="viewcode-block" id="PullResult">
+<a class="viewcode-back" href="../api.html#pull_new_data.PullResult">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PullResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""What one pull did, for the UI and the logs."""</span>
+
+    <span class="n">scraped</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">inserted</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">skipped</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">total_rows</span><span class="p">:</span> <span class="nb">int</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">message</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">scraped</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"No new entries found - the database is already up to date."</span>
+        <span class="k">return</span> <span class="p">(</span><span class="sa">f</span><span class="s2">"Added </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">inserted</span><span class="si">}</span><span class="s2"> new entries (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">skipped</span><span class="si">}</span><span class="s2"> already present); "</span>
+                <span class="sa">f</span><span class="s2">"database now holds </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">total_rows</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> rows."</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="known_urls">
+<a class="viewcode-back" href="../api.html#pull_new_data.known_urls">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">known_urls</span><span class="p">(</span><span class="n">conn</span><span class="p">:</span> <span class="n">psycopg</span><span class="o">.</span><span class="n">Connection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Entry URLs already stored - the stop condition for the scraper."""</span>
+    <span class="k">with</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span> <span class="k">as</span> <span class="n">cur</span><span class="p">:</span>
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">"SELECT url FROM applicants WHERE url IS NOT NULL;"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()}</span></div>
+
+
+
+<div class="viewcode-block" id="default_scrape">
+<a class="viewcode-back" href="../api.html#pull_new_data.default_scrape">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">default_scrape</span><span class="p">(</span><span class="n">known</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">max_pages</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">delay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Scrape with the Module 2 scraper attached to a user-opened Chrome."""</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">scrape</span><span class="w"> </span><span class="kn">import</span> <span class="n">GradCafeScraper</span>  <span class="c1"># imported lazily: Selenium only when really scraping</span>
+
+    <span class="n">scraper</span> <span class="o">=</span> <span class="n">GradCafeScraper</span><span class="p">(</span><span class="n">delay_seconds</span><span class="o">=</span><span class="n">delay</span><span class="p">,</span> <span class="n">html_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">scraper</span><span class="o">.</span><span class="n">scrape_new_entries</span><span class="p">(</span><span class="n">known</span><span class="p">,</span> <span class="n">max_pages</span><span class="o">=</span><span class="n">max_pages</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">scraper</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="pull">
+<a class="viewcode-back" href="../api.html#pull_new_data.pull">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pull</span><span class="p">(</span>
+    <span class="n">scrape_fn</span><span class="p">:</span> <span class="n">ScrapeFn</span> <span class="o">=</span> <span class="n">default_scrape</span><span class="p">,</span>
+    <span class="n">standardize_fn</span><span class="p">:</span> <span class="n">StandardizeFn</span> <span class="o">=</span> <span class="n">standardize_rules_only</span><span class="p">,</span>
+    <span class="n">database_url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PullResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Run the whole pipeline once and return a :class:`PullResult`.</span>
+
+<span class="sd">    The transaction is committed only after every new row is inserted, so a</span>
+<span class="sd">    failure in scraping, cleaning or standardizing leaves the table untouched.</span>
+<span class="sd">    """</span>
+    <span class="k">with</span> <span class="n">psycopg</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">database_url</span> <span class="ow">or</span> <span class="n">get_database_url</span><span class="p">())</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="n">load_data</span><span class="o">.</span><span class="n">create_table</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+        <span class="n">known</span> <span class="o">=</span> <span class="n">known_urls</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+        <span class="n">new_raw</span> <span class="o">=</span> <span class="n">scrape_fn</span><span class="p">(</span><span class="n">known</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">new_raw</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">PullResult</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">load_data</span><span class="o">.</span><span class="n">count_rows</span><span class="p">(</span><span class="n">conn</span><span class="p">))</span>
+        <span class="n">extended</span> <span class="o">=</span> <span class="n">standardize_fn</span><span class="p">(</span><span class="n">clean_data</span><span class="p">(</span><span class="n">new_raw</span><span class="p">))</span>
+        <span class="n">inserted</span><span class="p">,</span> <span class="n">skipped</span> <span class="o">=</span> <span class="n">load_data</span><span class="o">.</span><span class="n">load_records</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">extended</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PullResult</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">new_raw</span><span class="p">),</span> <span class="n">inserted</span><span class="p">,</span> <span class="n">skipped</span><span class="p">,</span> <span class="n">load_data</span><span class="o">.</span><span class="n">count_rows</span><span class="p">(</span><span class="n">conn</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../api.html#pull_new_data.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">argv</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Command-line entry point: ``python pull_new_data.py [--llm] [--max-pages N]``."""</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="vm">__doc__</span><span class="p">,</span> <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--max-pages"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"safety cap on pages to read"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--llm"</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">"store_true"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"use the local LLM standardizer"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--delay"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">float</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"seconds between pages"</span><span class="p">)</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">(</span><span class="n">argv</span><span class="p">)</span>
+
+    <span class="n">standardize_fn</span><span class="p">:</span> <span class="n">StandardizeFn</span> <span class="o">=</span> <span class="n">standardize_rules_only</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">llm</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">clean</span><span class="w"> </span><span class="kn">import</span> <span class="n">standardize_with_llm</span>
+        <span class="n">standardize_fn</span> <span class="o">=</span> <span class="n">standardize_with_llm</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">pull</span><span class="p">(</span><span class="k">lambda</span> <span class="n">known</span><span class="p">:</span> <span class="n">default_scrape</span><span class="p">(</span><span class="n">known</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">max_pages</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">delay</span><span class="p">),</span> <span class="n">standardize_fn</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001 - report anything to the operator</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"pull failed: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">file</span><span class="o">=</span><span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mi">1</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>  <span class="c1"># pragma: no cover</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

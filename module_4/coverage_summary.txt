@@ -1,0 +1,18 @@
+_______________ coverage: platform linux, python 3.11.15-final-0 _______________
+
+Name                            Stmts   Miss  Cover   Missing
+-------------------------------------------------------------
+module_4/src/clean.py             138      0   100%
+module_4/src/config.py              8      0   100%
+module_4/src/flask_app.py          92      0   100%
+module_4/src/load_data.py          93      0   100%
+module_4/src/models.py             49      0   100%
+module_4/src/orm_queries.py        92      0   100%
+module_4/src/pull_new_data.py      59      0   100%
+module_4/src/query_data.py         87      0   100%
+module_4/src/scrape.py            324      0   100%
+module_4/src/standardize.py        64      0   100%
+-------------------------------------------------------------
+TOTAL                            1006      0   100%
+Required test coverage of 100% reached. Total coverage: 100.00%
+99 passed in 2.57s

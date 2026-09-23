@@ -1,0 +1,18 @@
+# Module 4 - application + tests + docs (Python >= 3.10)
+
+# application (Flask web layer, ETL, database)
+Flask>=3.0,<4
+SQLAlchemy>=2.0,<3
+psycopg[binary]>=3.1,<4
+python-dotenv>=1.0
+beautifulsoup4>=4.12,<5
+selenium>=4.20,<5
+pillow>=10.0
+
+# tests + coverage
+pytest>=8.0
+pytest-cov>=5.0
+
+# documentation
+sphinx>=7.0
+sphinx-rtd-theme>=2.0

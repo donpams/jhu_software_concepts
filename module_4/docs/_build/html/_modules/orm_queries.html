@@ -1,0 +1,398 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>orm_queries &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../testing.html">Testing guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../operations.html">Operational notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Module code</a></li>
+      <li class="breadcrumb-item active">orm_queries</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for orm_queries</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">orm_queries.py - Repeat selected analysis questions with the SQLAlchemy ORM.</span>
+
+<span class="sd">No handwritten SQL here: every query is built with ``select()``, ``where()``,</span>
+<span class="sd">``func.count()`` / ``func.avg()``, ``and_()`` / ``or_()`` and executed through</span>
+<span class="sd">a SQLAlchemy ``Session`` against the same ``applicants`` table that</span>
+<span class="sd">load_data.py filled.  Questions repeated: 1, 4, 5, 8, 9 and original</span>
+<span class="sd">question 10.  Formatting follows the same rules as query_data.py.</span>
+
+<span class="sd">The functions are also imported by the Flask app (flask_app.py), so the</span>
+<span class="sd">webpage reads the database exclusively through the ORM.</span>
+
+<span class="sd">Run::</span>
+
+<span class="sd">    python orm_queries.py</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">and_</span><span class="p">,</span> <span class="n">case</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">or_</span><span class="p">,</span> <span class="n">select</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">Session</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Applicant</span><span class="p">,</span> <span class="n">get_session</span>
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># Reusable filter expressions (mirror the SQL fragments in query_data.py)     #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="n">FALL_2026</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">term</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"fall 2026"</span><span class="p">)</span>
+<span class="n">FALL_2025</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">term</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"fall 2025"</span><span class="p">)</span>
+<span class="n">ACCEPTED</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"accept%"</span><span class="p">)</span>
+<span class="n">PHD</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">degree</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"phd"</span><span class="p">)</span>
+<span class="n">CS_ORIGINAL</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"</span><span class="si">%c</span><span class="s2">omputer science%"</span><span class="p">)</span>
+<span class="n">CS_LLM</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"</span><span class="si">%c</span><span class="s2">omputer science%"</span><span class="p">)</span>
+<span class="c1"># Only values that are possible on the metric's scale count as "provided".</span>
+<span class="n">GPA_VALID</span> <span class="o">=</span> <span class="n">and_</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">gpa</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gpa</span> <span class="o">&lt;=</span> <span class="mf">4.0</span><span class="p">)</span>
+<span class="n">GRE_VALID</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gre</span><span class="o">.</span><span class="n">between</span><span class="p">(</span><span class="mi">130</span><span class="p">,</span> <span class="mi">170</span><span class="p">)</span>
+<span class="n">GRE_V_VALID</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gre_v</span><span class="o">.</span><span class="n">between</span><span class="p">(</span><span class="mi">130</span><span class="p">,</span> <span class="mi">170</span><span class="p">)</span>
+<span class="n">GRE_AW_VALID</span> <span class="o">=</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gre_aw</span><span class="o">.</span><span class="n">between</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+
+<span class="n">FOUR_UNIS_ORIGINAL</span> <span class="o">=</span> <span class="n">or_</span><span class="p">(</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"</span><span class="si">%g</span><span class="s2">eorgetown%"</span><span class="p">),</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"%massachusetts institute of technology%"</span><span class="p">),</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">regexp_match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\mMIT\M"</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="s2">"i"</span><span class="p">),</span>  <span class="c1"># whole word, -&gt; ~* in PostgreSQL</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"</span><span class="si">%s</span><span class="s2">tanford%"</span><span class="p">),</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"</span><span class="si">%c</span><span class="s2">arnegie mellon%"</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">FOUR_UNIS_LLM</span> <span class="o">=</span> <span class="n">or_</span><span class="p">(</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"georgetown university"</span><span class="p">),</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"massachusetts institute of technology"</span><span class="p">),</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"stanford university"</span><span class="p">),</span>
+    <span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"carnegie mellon university"</span><span class="p">),</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_pct</span><span class="p">(</span><span class="n">numerator_condition</span><span class="p">,</span> <span class="n">denominator_count</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""100 * count(rows matching condition) / denominator, as a SQL expression."""</span>
+    <span class="n">matched</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">case</span><span class="p">((</span><span class="n">numerator_condition</span><span class="p">,</span> <span class="mi">1</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="mf">100.0</span> <span class="o">*</span> <span class="n">matched</span> <span class="o">/</span> <span class="n">func</span><span class="o">.</span><span class="n">nullif</span><span class="p">(</span><span class="n">denominator_count</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># Questions                                                                   #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="q1_fall_2026_count">
+<a class="viewcode-back" href="../api.html#orm_queries.q1_fall_2026_count">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q1_fall_2026_count</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Q1 - number of Fall 2026 entries."""</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">FALL_2026</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q2_percent_international">
+<a class="viewcode-back" href="../api.html#orm_queries.q2_percent_international">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q2_percent_international</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Q2 - percent international among rows with a nationality value (used by the webpage)."""</span>
+    <span class="n">usable</span> <span class="o">=</span> <span class="n">and_</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">us_or_international</span><span class="o">.</span><span class="n">is_not</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
+                  <span class="n">func</span><span class="o">.</span><span class="n">btrim</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">us_or_international</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">_pct</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">us_or_international</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"international"</span><span class="p">),</span>
+                       <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">)))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">usable</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q3_averages">
+<a class="viewcode-back" href="../api.html#orm_queries.q3_averages">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q3_averages</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Q3 - separate averages of each metric over applicants who provide it (webpage)."""</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">avg</span><span class="p">(</span><span class="n">case</span><span class="p">((</span><span class="n">GPA_VALID</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gpa</span><span class="p">))),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">avg</span><span class="p">(</span><span class="n">case</span><span class="p">((</span><span class="n">GRE_VALID</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gre</span><span class="p">))),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">avg</span><span class="p">(</span><span class="n">case</span><span class="p">((</span><span class="n">GRE_V_VALID</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gre_v</span><span class="p">))),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">avg</span><span class="p">(</span><span class="n">case</span><span class="p">((</span><span class="n">GRE_AW_VALID</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gre_aw</span><span class="p">))),</span>
+    <span class="p">)</span>
+    <span class="n">gpa</span><span class="p">,</span> <span class="n">gre</span><span class="p">,</span> <span class="n">gre_v</span><span class="p">,</span> <span class="n">gre_aw</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span><span class="o">.</span><span class="n">one</span><span class="p">()</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"gpa"</span><span class="p">:</span> <span class="n">gpa</span><span class="p">,</span> <span class="s2">"gre"</span><span class="p">:</span> <span class="n">gre</span><span class="p">,</span> <span class="s2">"gre_v"</span><span class="p">:</span> <span class="n">gre_v</span><span class="p">,</span> <span class="s2">"gre_aw"</span><span class="p">:</span> <span class="n">gre_aw</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="q4_avg_gpa_american_fall_2026">
+<a class="viewcode-back" href="../api.html#orm_queries.q4_avg_gpa_american_fall_2026">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q4_avg_gpa_american_fall_2026</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Q4 - average GPA of American Fall 2026 applicants who report a GPA."""</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">avg</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">gpa</span><span class="p">))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">and_</span><span class="p">(</span><span class="n">FALL_2026</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">us_or_international</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"american"</span><span class="p">),</span> <span class="n">GPA_VALID</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q5_fall_2025_acceptance_pct">
+<a class="viewcode-back" href="../api.html#orm_queries.q5_fall_2025_acceptance_pct">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q5_fall_2025_acceptance_pct</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Q5 - percentage of Fall 2025 entries that are acceptances."""</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">_pct</span><span class="p">(</span><span class="n">ACCEPTED</span><span class="p">,</span> <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">)))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">FALL_2025</span><span class="p">)</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q6_avg_gpa_accepted_fall_2026">
+<a class="viewcode-back" href="../api.html#orm_queries.q6_avg_gpa_accepted_fall_2026">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q6_avg_gpa_accepted_fall_2026</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Q6 - average GPA of accepted Fall 2026 applicants (webpage)."""</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">avg</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">gpa</span><span class="p">))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">and_</span><span class="p">(</span><span class="n">FALL_2026</span><span class="p">,</span> <span class="n">ACCEPTED</span><span class="p">,</span> <span class="n">GPA_VALID</span><span class="p">))</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q7_jhu_cs_masters_count">
+<a class="viewcode-back" href="../api.html#orm_queries.q7_jhu_cs_masters_count">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q7_jhu_cs_masters_count</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Q7 - JHU Computer Science master's entries, original fields (webpage)."""</span>
+    <span class="n">jhu</span> <span class="o">=</span> <span class="n">or_</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"%johns hopkins%"</span><span class="p">),</span>
+              <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"%john hopkins%"</span><span class="p">),</span>
+              <span class="n">Applicant</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">regexp_match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\mJHU\M"</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="s2">"i"</span><span class="p">))</span>
+    <span class="n">masters</span> <span class="o">=</span> <span class="n">or_</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">degree</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"master%"</span><span class="p">),</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">degree</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"ms"</span><span class="p">),</span>
+                  <span class="n">Applicant</span><span class="o">.</span><span class="n">degree</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="s2">"m.s.%"</span><span class="p">))</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">and_</span><span class="p">(</span><span class="n">jhu</span><span class="p">,</span> <span class="n">CS_ORIGINAL</span><span class="p">,</span> <span class="n">masters</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q8_cs_phd_acceptances_original">
+<a class="viewcode-back" href="../api.html#orm_queries.q8_cs_phd_acceptances_original">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q8_cs_phd_acceptances_original</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Q8 - Fall 2026 accepted CS PhD entries at the four universities (original fields)."""</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">and_</span><span class="p">(</span><span class="n">FALL_2026</span><span class="p">,</span> <span class="n">ACCEPTED</span><span class="p">,</span> <span class="n">PHD</span><span class="p">,</span> <span class="n">CS_ORIGINAL</span><span class="p">,</span> <span class="n">FOUR_UNIS_ORIGINAL</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q9_cs_phd_acceptances_llm">
+<a class="viewcode-back" href="../api.html#orm_queries.q9_cs_phd_acceptances_llm">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q9_cs_phd_acceptances_llm</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Q9 - same as Q8 but program/university from the LLM-standardized columns."""</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">))</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">and_</span><span class="p">(</span><span class="n">FALL_2026</span><span class="p">,</span> <span class="n">ACCEPTED</span><span class="p">,</span> <span class="n">PHD</span><span class="p">,</span> <span class="n">CS_LLM</span><span class="p">,</span> <span class="n">FOUR_UNIS_LLM</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">stmt</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="q10_acceptance_rate_by_degree">
+<a class="viewcode-back" href="../api.html#orm_queries.q10_acceptance_rate_by_degree">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q10_acceptance_rate_by_degree</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">,</span> <span class="n">min_entries</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">500</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Original Q10 - acceptance percentage per degree type with &gt;= min_entries rows."""</span>
+    <span class="n">entries</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">)</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">select</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">degree</span><span class="p">,</span> <span class="n">entries</span><span class="p">,</span> <span class="n">_pct</span><span class="p">(</span><span class="n">ACCEPTED</span><span class="p">,</span> <span class="n">entries</span><span class="p">))</span>
+        <span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">degree</span><span class="o">.</span><span class="n">is_not</span><span class="p">(</span><span class="kc">None</span><span class="p">))</span>
+        <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">degree</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">having</span><span class="p">(</span><span class="n">entries</span> <span class="o">&gt;=</span> <span class="n">min_entries</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">entries</span><span class="o">.</span><span class="n">desc</span><span class="p">())</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">[(</span><span class="n">degree</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">pct</span><span class="p">))</span> <span class="k">for</span> <span class="n">degree</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">pct</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">stmt</span><span class="p">)]</span></div>
+
+
+
+<div class="viewcode-block" id="q11_top_universities_fall_2026">
+<a class="viewcode-back" href="../api.html#orm_queries.q11_top_universities_fall_2026">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">q11_top_universities_fall_2026</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
+<span class="w">    </span><span class="sd">"""Original Q11 - ten most-reported universities for Fall 2026 (webpage)."""</span>
+    <span class="n">entries</span> <span class="o">=</span> <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">)</span>
+    <span class="n">stmt</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">select</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span><span class="p">,</span> <span class="n">entries</span><span class="p">,</span> <span class="n">_pct</span><span class="p">(</span><span class="n">ACCEPTED</span><span class="p">,</span> <span class="n">entries</span><span class="p">),</span>
+               <span class="n">func</span><span class="o">.</span><span class="n">avg</span><span class="p">(</span><span class="n">case</span><span class="p">((</span><span class="n">GPA_VALID</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">gpa</span><span class="p">))))</span>
+        <span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">and_</span><span class="p">(</span><span class="n">FALL_2026</span><span class="p">,</span> <span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span><span class="o">.</span><span class="n">is_not</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
+                    <span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span> <span class="o">!=</span> <span class="s2">"Unknown"</span><span class="p">))</span>
+        <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">llm_generated_university</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">entries</span><span class="o">.</span><span class="n">desc</span><span class="p">())</span>
+        <span class="o">.</span><span class="n">limit</span><span class="p">(</span><span class="n">limit</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">[(</span><span class="n">uni</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="nb">float</span><span class="p">(</span><span class="n">pct</span><span class="p">),</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">gpa</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">gpa</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">uni</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">pct</span><span class="p">,</span> <span class="n">gpa</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">stmt</span><span class="p">)]</span></div>
+
+
+
+<div class="viewcode-block" id="gather_results">
+<a class="viewcode-back" href="../api.html#orm_queries.gather_results">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">gather_results</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Every value the analysis template renders, already formatted.</span>
+
+<span class="sd">    Keys: ``total, q1, q2, q3 (dict gpa/gre/gre_v/gre_aw), q4, q5, q6, q7,</span>
+<span class="sd">    q8, q9, q9_diff, q10 (rows), q11 (rows)``.  Percentages always carry two</span>
+<span class="sd">    decimals; counts are whole numbers with thousands separators.</span>
+<span class="sd">    """</span>
+    <span class="n">averages</span> <span class="o">=</span> <span class="n">q3_averages</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+    <span class="n">q8</span> <span class="o">=</span> <span class="n">q8_cs_phd_acceptances_original</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+    <span class="n">q9</span> <span class="o">=</span> <span class="n">q9_cs_phd_acceptances_llm</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"total"</span><span class="p">:</span> <span class="n">fmt_count</span><span class="p">(</span><span class="n">total_entries</span><span class="p">(</span><span class="n">session</span><span class="p">)),</span>
+        <span class="s2">"q1"</span><span class="p">:</span> <span class="n">fmt_count</span><span class="p">(</span><span class="n">q1_fall_2026_count</span><span class="p">(</span><span class="n">session</span><span class="p">)),</span>
+        <span class="s2">"q2"</span><span class="p">:</span> <span class="n">fmt_percent</span><span class="p">(</span><span class="n">q2_percent_international</span><span class="p">(</span><span class="n">session</span><span class="p">)),</span>
+        <span class="s2">"q3"</span><span class="p">:</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">fmt_average</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">averages</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
+        <span class="s2">"q4"</span><span class="p">:</span> <span class="n">fmt_average</span><span class="p">(</span><span class="n">q4_avg_gpa_american_fall_2026</span><span class="p">(</span><span class="n">session</span><span class="p">)),</span>
+        <span class="s2">"q5"</span><span class="p">:</span> <span class="n">fmt_percent</span><span class="p">(</span><span class="n">q5_fall_2025_acceptance_pct</span><span class="p">(</span><span class="n">session</span><span class="p">)),</span>
+        <span class="s2">"q6"</span><span class="p">:</span> <span class="n">fmt_average</span><span class="p">(</span><span class="n">q6_avg_gpa_accepted_fall_2026</span><span class="p">(</span><span class="n">session</span><span class="p">)),</span>
+        <span class="s2">"q7"</span><span class="p">:</span> <span class="n">fmt_count</span><span class="p">(</span><span class="n">q7_jhu_cs_masters_count</span><span class="p">(</span><span class="n">session</span><span class="p">)),</span>
+        <span class="s2">"q8"</span><span class="p">:</span> <span class="n">fmt_count</span><span class="p">(</span><span class="n">q8</span><span class="p">),</span>
+        <span class="s2">"q9"</span><span class="p">:</span> <span class="n">fmt_count</span><span class="p">(</span><span class="n">q9</span><span class="p">),</span>
+        <span class="s2">"q9_diff"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">q9</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">q8</span><span class="si">:</span><span class="s2">+d</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+        <span class="s2">"q10"</span><span class="p">:</span> <span class="p">[(</span><span class="n">degree</span><span class="p">,</span> <span class="n">fmt_count</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">fmt_percent</span><span class="p">(</span><span class="n">pct</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">degree</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">pct</span> <span class="ow">in</span> <span class="n">q10_acceptance_rate_by_degree</span><span class="p">(</span><span class="n">session</span><span class="p">)],</span>
+        <span class="s2">"q11"</span><span class="p">:</span> <span class="p">[(</span><span class="n">uni</span><span class="p">,</span> <span class="n">fmt_count</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="n">fmt_percent</span><span class="p">(</span><span class="n">pct</span><span class="p">),</span> <span class="n">fmt_average</span><span class="p">(</span><span class="n">gpa</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">uni</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">pct</span><span class="p">,</span> <span class="n">gpa</span> <span class="ow">in</span> <span class="n">q11_top_universities_fall_2026</span><span class="p">(</span><span class="n">session</span><span class="p">)],</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="total_entries">
+<a class="viewcode-back" href="../api.html#orm_queries.total_entries">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">total_entries</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">Session</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Row count shown in the webpage header."""</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">scalar</span><span class="p">(</span><span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Applicant</span><span class="o">.</span><span class="n">p_id</span><span class="p">)))</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<span class="c1"># Formatting helpers (same rules as query_data.py)                            #</span>
+<span class="c1"># --------------------------------------------------------------------------- #</span>
+<div class="viewcode-block" id="fmt_count">
+<a class="viewcode-back" href="../api.html#orm_queries.fmt_count">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fmt_count</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">value</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<div class="viewcode-block" id="fmt_percent">
+<a class="viewcode-back" href="../api.html#orm_queries.fmt_percent">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fmt_percent</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="s2">"n/a"</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">%"</span></div>
+
+
+
+<div class="viewcode-block" id="fmt_average">
+<a class="viewcode-back" href="../api.html#orm_queries.fmt_average">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fmt_average</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="s2">"n/a"</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../api.html#orm_queries.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">get_session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"Grad Cafe analysis - SQLAlchemy ORM</span><span class="se">\n</span><span class="s2">"</span> <span class="o">+</span> <span class="s2">"="</span> <span class="o">*</span> <span class="mi">40</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Q1.  Fall 2026 applicant count: </span><span class="si">{</span><span class="n">fmt_count</span><span class="p">(</span><span class="n">q1_fall_2026_count</span><span class="p">(</span><span class="n">session</span><span class="p">))</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Q4.  Average GPA of American Fall 2026 applicants: </span><span class="si">{</span><span class="n">fmt_average</span><span class="p">(</span><span class="n">q4_avg_gpa_american_fall_2026</span><span class="p">(</span><span class="n">session</span><span class="p">))</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Q5.  Fall 2025 acceptance percentage: </span><span class="si">{</span><span class="n">fmt_percent</span><span class="p">(</span><span class="n">q5_fall_2025_acceptance_pct</span><span class="p">(</span><span class="n">session</span><span class="p">))</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">q8</span> <span class="o">=</span> <span class="n">q8_cs_phd_acceptances_original</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+        <span class="n">q9</span> <span class="o">=</span> <span class="n">q9_cs_phd_acceptances_llm</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Q8.  Fall 2026 CS PhD acceptances at Georgetown/MIT/Stanford/CMU (original fields): </span><span class="si">{</span><span class="n">fmt_count</span><span class="p">(</span><span class="n">q8</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Q9.  Same using LLM-standardized fields: </span><span class="si">{</span><span class="n">fmt_count</span><span class="p">(</span><span class="n">q9</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"     Original-field count: </span><span class="si">{</span><span class="n">q8</span><span class="si">}</span><span class="se">\n</span><span class="s2">     LLM-field count: </span><span class="si">{</span><span class="n">q9</span><span class="si">}</span><span class="se">\n</span><span class="s2">     Difference: </span><span class="si">{</span><span class="n">q9</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">q8</span><span class="si">:</span><span class="s2">+d</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"Q10. Acceptance rate by degree type (&gt;= 500 entries):"</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">degree</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">pct</span> <span class="ow">in</span> <span class="n">q10_acceptance_rate_by_degree</span><span class="p">(</span><span class="n">session</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"     </span><span class="si">{</span><span class="n">degree</span><span class="si">:</span><span class="s2">&lt;8</span><span class="si">}</span><span class="s2"> entries: </span><span class="si">{</span><span class="n">fmt_count</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="si">:</span><span class="s2">&gt;7</span><span class="si">}</span><span class="s2">   acceptance: </span><span class="si">{</span><span class="n">fmt_percent</span><span class="p">(</span><span class="n">pct</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>  <span class="c1"># pragma: no cover</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

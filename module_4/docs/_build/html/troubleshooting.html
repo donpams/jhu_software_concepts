@@ -1,0 +1,152 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Troubleshooting &mdash; Grad Cafe Analytics</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=9f5556dd"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Operational notes" href="operations.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Grad Cafe Analytics
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">Overview &amp; setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="testing.html">Testing guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="operations.html">Operational notes</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Troubleshooting</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Grad Cafe Analytics</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Troubleshooting</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/troubleshooting.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="troubleshooting">
+<h1>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading"></a></h1>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">could</span> <span class="pre">not</span> <span class="pre">connect</span> <span class="pre">to</span> <span class="pre">PostgreSQL</span></code> / <code class="docutils literal notranslate"><span class="pre">connection</span> <span class="pre">refused</span></code></dt><dd><p>PostgreSQL is not running or <code class="docutils literal notranslate"><span class="pre">DATABASE_URL</span></code> points at the wrong
+host/port/database.  <code class="docutils literal notranslate"><span class="pre">pg_isready</span></code> and <code class="docutils literal notranslate"><span class="pre">psql</span> <span class="pre">&quot;$DATABASE_URL&quot;</span> <span class="pre">-c</span> <span class="pre">'select</span> <span class="pre">1'</span></code>
+confirm the connection.  On macOS with Homebrew: <code class="docutils literal notranslate"><span class="pre">brew</span> <span class="pre">services</span> <span class="pre">start</span>
+<span class="pre">postgresql&#64;16</span></code>.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">database</span> <span class="pre">&quot;gradcafe_test&quot;</span> <span class="pre">does</span> <span class="pre">not</span> <span class="pre">exist</span></code></dt><dd><p>Create it once: <code class="docutils literal notranslate"><span class="pre">createdb</span> <span class="pre">gradcafe_test</span></code> (the suite truncates the
+<code class="docutils literal notranslate"><span class="pre">applicants</span></code> table in whatever database <code class="docutils literal notranslate"><span class="pre">TEST_DATABASE_URL</span></code> names, so
+never point it at real data).</p>
+</dd>
+<dt>Tests pass locally but fail in GitHub Actions</dt><dd><p>The workflow starts a <code class="docutils literal notranslate"><span class="pre">postgres:16</span></code> service on <code class="docutils literal notranslate"><span class="pre">localhost:5432</span></code> with
+user/password <code class="docutils literal notranslate"><span class="pre">postgres</span></code> and exports
+<code class="docutils literal notranslate"><span class="pre">DATABASE_URL=postgresql://postgres:postgres&#64;localhost:5432/gradcafe_test</span></code>.
+If you renamed the database or job, keep the two in sync.  The health
+check waits for the server before pytest starts.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Required</span> <span class="pre">test</span> <span class="pre">coverage</span> <span class="pre">of</span> <span class="pre">100%</span> <span class="pre">not</span> <span class="pre">reached</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">--cov-fail-under=100</span></code> is set in <code class="docutils literal notranslate"><span class="pre">pytest.ini</span></code>.  Run <code class="docutils literal notranslate"><span class="pre">pytest</span>
+<span class="pre">module_4/tests</span></code> and read the <em>Missing</em> column; add a test for those lines
+or, for code that is impossible to reach in tests (a <code class="docutils literal notranslate"><span class="pre">__main__</span></code> guard),
+mark it <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">pragma:</span> <span class="pre">no</span> <span class="pre">cover</span></code>.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">pytest:</span> <span class="pre">error:</span> <span class="pre">unrecognized</span> <span class="pre">arguments:</span> <span class="pre">--cov</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">pytest-cov</span></code> is not installed in the active environment:
+<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-r</span> <span class="pre">module_4/requirements.txt</span></code>.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">ModuleNotFoundError:</span> <span class="pre">No</span> <span class="pre">module</span> <span class="pre">named</span> <span class="pre">'flask_app'</span></code></dt><dd><p>Run pytest from the repository root (<code class="docutils literal notranslate"><span class="pre">pytest</span> <span class="pre">module_4/tests</span></code>) or from
+<code class="docutils literal notranslate"><span class="pre">module_4</span></code> so <code class="docutils literal notranslate"><span class="pre">pytest.ini</span></code>’s <code class="docutils literal notranslate"><span class="pre">pythonpath</span> <span class="pre">=</span> <span class="pre">src</span></code> applies.</p>
+</dd>
+<dt>Pull Data reports <code class="docutils literal notranslate"><span class="pre">Site</span> <span class="pre">did</span> <span class="pre">not</span> <span class="pre">return</span> <span class="pre">results</span></code></dt><dd><p>Cloudflare showed its human check and nobody clicked it within five
+minutes.  Open the Chrome window started with <code class="docutils literal notranslate"><span class="pre">--remote-debugging-port=9222</span></code>,
+clear the check on <code class="docutils literal notranslate"><span class="pre">https://www.thegradcafe.com/survey/</span></code> and click Pull
+Data again.  Nothing was written to the database.</p>
+</dd>
+<dt>Pull Data reports <code class="docutils literal notranslate"><span class="pre">cannot</span> <span class="pre">connect</span> <span class="pre">to</span> <span class="pre">chrome</span></code> / <code class="docutils literal notranslate"><span class="pre">debuggerAddress</span></code></dt><dd><p>Chrome is not running with remote debugging.  Start it with the command in
+<a class="reference internal" href="overview.html"><span class="doc">Overview &amp; setup</span></a> before clicking the button.</p>
+</dd>
+<dt>Sphinx: <code class="docutils literal notranslate"><span class="pre">WARNING:</span> <span class="pre">autodoc:</span> <span class="pre">failed</span> <span class="pre">to</span> <span class="pre">import</span> <span class="pre">module</span></code></dt><dd><p>Build from <code class="docutils literal notranslate"><span class="pre">module_4/docs</span></code> (<code class="docutils literal notranslate"><span class="pre">sphinx-build</span> <span class="pre">-b</span> <span class="pre">html</span> <span class="pre">.</span> <span class="pre">_build/html</span></code>) so
+<code class="docutils literal notranslate"><span class="pre">conf.py</span></code> can add <code class="docutils literal notranslate"><span class="pre">../src</span></code> to <code class="docutils literal notranslate"><span class="pre">sys.path</span></code>, and make sure the
+application requirements are installed.</p>
+</dd>
+</dl>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="operations.html" class="btn btn-neutral float-left" title="Operational notes" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Pammi.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
