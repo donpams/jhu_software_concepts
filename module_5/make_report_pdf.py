@@ -209,10 +209,9 @@ def build() -> Path:
                                                      backColor=colors.HexColor("#f3f4f6"), borderPadding=4)))
         if title.startswith("6.") and (HERE / "dependency.png").exists():
             story.append(Image(str(HERE / "dependency.png"), width=6.5 * inch, height=4.7 * inch, kind="proportional"))
-        if title.startswith("7."):
-            for name in ("snyk-analysis.png", "snyk-code.png"):
-                if (HERE / name).exists():
-                    story.append(Image(str(HERE / name), width=6.5 * inch, height=4.5 * inch, kind="proportional"))
+        if title.startswith("7.") and (HERE / "snyk-analysis.png").exists():
+            story.append(Image(str(HERE / "snyk-analysis.png"), width=6.5 * inch, height=4.5 * inch,
+                               kind="proportional"))
         if title.startswith("8.") and (HERE / "ci_success.png").exists():
             story.append(Image(str(HERE / "ci_success.png"), width=6.5 * inch, height=4.0 * inch, kind="proportional"))
         if title.startswith(("4.", "6.")):

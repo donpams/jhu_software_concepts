@@ -168,11 +168,11 @@ packages they pull in (`flask`, `sqlalchemy`, `psycopg`, `bs4`, `dotenv`).
 ```bash
 npm install -g snyk && snyk auth      # once
 cd module_5 && snyk test --file=requirements.txt --package-manager=pip
-snyk code test                        # SAST (extra credit)
 ```
 
-Results: `snyk-analysis.png` (dependency scan) and `snyk-code.png` (SAST); the
-report PDF summarizes findings and remediation.
+Result: `snyk-analysis.png` (62 dependencies tested, no vulnerable paths
+found); `snyk_test_output.txt` holds the plain-text output and the report PDF
+summarizes findings and remediation.
 
 ### Tests
 
