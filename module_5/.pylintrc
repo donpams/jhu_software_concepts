@@ -1,0 +1,23 @@
+# Pylint configuration for module_5/src  (run: pylint --rcfile=.pylintrc src)
+[MAIN]
+py-version = 3.10
+
+[FORMAT]
+max-line-length = 120
+
+[DESIGN]
+# create_app() takes six injectable collaborators; the HTML parser and the
+# resumable scraping loop legitimately hold more locals than the default 15.
+max-args = 8
+max-positional-arguments = 8
+max-locals = 30
+max-branches = 15
+max-attributes = 8
+min-public-methods = 0
+
+[TYPECHECK]
+# sqlalchemy.func.* members are generated at runtime (func.count, func.avg, ...)
+generated-members = sqlalchemy.func.*
+
+[BASIC]
+good-names = i, j, k, n, fh, db, q, q8, q9, id, _

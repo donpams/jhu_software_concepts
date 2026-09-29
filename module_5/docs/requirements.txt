@@ -1,0 +1,2 @@
+# Read the Docs / local docs build
+-r ../requirements.txt

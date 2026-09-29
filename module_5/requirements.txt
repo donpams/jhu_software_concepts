@@ -1,0 +1,23 @@
+# Module 5 - Grad Cafe analytics: runtime, tests, docs and security tooling (Python >= 3.10)
+
+# --- runtime: Flask web layer, ETL, database ---
+Flask>=3.0,<4
+SQLAlchemy>=2.0,<3
+psycopg[binary]>=3.1,<4
+python-dotenv>=1.0
+beautifulsoup4>=4.12,<5
+selenium>=4.20,<5
+pillow>=10.0
+
+# --- tests + coverage ---
+pytest>=8.0
+pytest-cov>=5.0
+
+# --- documentation (Sphinx / Read the Docs) ---
+sphinx>=7.0
+sphinx-rtd-theme>=2.0
+
+# --- software assurance tooling ---
+pylint>=3.3          # static analysis: pylint --rcfile=.pylintrc src  (10.00/10 required)
+pydeps>=1.12         # dependency graph: pydeps src/flask_app.py -T svg -o dependency.svg (needs Graphviz `dot`)
+reportlab>=4.0       # builds module_5_report.pdf

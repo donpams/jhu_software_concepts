@@ -1,0 +1,8 @@
+$ pylint --rcfile=.pylintrc --fail-under=10 src
+
+
+--------------------------------------------------------------------
+Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
+
+
+(pylint 4.0.9)

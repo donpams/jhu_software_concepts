@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grad Cafe Admissions Analysis</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div>
+      <h1 data-testid="page-title">Grad Cafe Admissions Analysis</h1>
+      <p class="subtitle">
+        {% if results %}{{ results.total }} applicant entries in PostgreSQL &middot; queried {{ generated_at }}{% else %}PostgreSQL unavailable{% endif %}
+      </p>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-secondary" id="pull-data-btn" data-testid="pull-data-btn" {% if busy %}disabled{% endif %}>Pull Data</button>
+      <button type="button" class="btn btn-primary" id="update-analysis-btn" data-testid="update-analysis-btn">Update Analysis</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <div id="flash" class="flash" hidden></div>
+
+  <div id="pull-status" data-testid="pull-status" class="status status-{{ 'running' if busy else last.state }}">
+    {% if busy %}
+      <strong>Retrieving new data&hellip;</strong> {{ last.message }}
+      <span class="muted">(Update Analysis will show the new rows once this finishes.)</span>
+    {% elif last.state == 'finished' %}
+      <strong>Last pull:</strong> {{ last.message }} <span class="muted">{{ last.updated }}</span>
+    {% elif last.state == 'error' %}
+      <strong>Last pull failed:</strong> {{ last.message }} <span class="muted">{{ last.updated }}</span>
+    {% else %}
+      {{ last.message }}
+    {% endif %}
+  </div>
+
+  <section class="explain">
+    <p><strong>Pull Data</strong> checks Grad Cafe for newly submitted application results and adds any new
+      records to the database (existing rows are never changed). It uses the Module 2 scraper, which needs
+      the Chrome window with remote debugging open, and it stops at the first page that contains no new
+      entries. Depending on how much new data there is, this may take a few minutes. Only one pull can run
+      at a time.</p>
+    <p><strong>Update Analysis</strong> re-runs every query below against PostgreSQL and shows the most
+      up-to-date figures. It never starts a scrape.</p>
+  </section>
+
+  {% if error %}
+    <div class="flash flash-warning">{{ error }}</div>
+  {% elif results %}
+
+  <h2>Required questions</h2>
+  <div class="grid" data-testid="analysis-results">
+    <article class="card">
+      <h3>Q1 &middot; Fall 2026 entries</h3>
+      <p class="question">How many entries are from applicants who applied for Fall 2026?</p>
+      <p class="value"><span class="label">Answer:</span> {{ results.q1 }}</p>
+    </article>
+
+    <article class="card">
+      <h3>Q2 &middot; Percent international</h3>
+      <p class="question">Among entries with a nationality classification, what percentage are international?</p>
+      <p class="value"><span class="label">Answer:</span> {{ results.q2 }}</p>
+    </article>
+
+    <article class="card wide">
+      <h3>Q3 &middot; Average metrics (each over applicants who report it)</h3>
+      <dl class="metrics">
+        <div><dt>Answer: Average GPA</dt><dd>{{ results.q3.gpa }}</dd></div>
+        <div><dt>Answer: Average GRE Quantitative</dt><dd>{{ results.q3.gre }}</dd></div>
+        <div><dt>Answer: Average GRE Verbal</dt><dd>{{ results.q3.gre_v }}</dd></div>
+        <div><dt>Answer: Average GRE Analytical Writing</dt><dd>{{ results.q3.gre_aw }}</dd></div>
+      </dl>
+      <p class="note">Only values that are possible on each scale are counted (GRE 130&ndash;170, AW 0&ndash;6, GPA 0&ndash;4.0); Grad Cafe's generic "GRE" badge is often filled with a combined total.</p>
+    </article>
+
+    <article class="card">
+      <h3>Q4 &middot; American, Fall 2026</h3>
+      <p class="question">Average GPA of American applicants who applied for Fall 2026</p>
+      <p class="value"><span class="label">Answer:</span> {{ results.q4 }}</p>
+    </article>
+
+    <article class="card">
+      <h3>Q5 &middot; Fall 2025 acceptances</h3>
+      <p class="question">Percentage of Fall 2025 entries that are acceptances</p>
+      <p class="value"><span class="label">Answer:</span> {{ results.q5 }}</p>
+    </article>
+
+    <article class="card">
+      <h3>Q6 &middot; Accepted, Fall 2026</h3>
+      <p class="question">Average GPA of accepted applicants who applied for Fall 2026</p>
+      <p class="value"><span class="label">Answer:</span> {{ results.q6 }}</p>
+    </article>
+
+    <article class="card">
+      <h3>Q7 &middot; JHU CS master's</h3>
+      <p class="question">Entries for a master's in Computer Science at Johns Hopkins University (original fields)</p>
+      <p class="value"><span class="label">Answer:</span> {{ results.q7 }}</p>
+    </article>
+
+    <article class="card wide">
+      <h3>Q8 &amp; Q9 &middot; Fall 2026 CS PhD acceptances at Georgetown, MIT, Stanford, Carnegie Mellon</h3>
+      <dl class="metrics">
+        <div><dt>Answer: Original-field count (Q8)</dt><dd>{{ results.q8 }}</dd></div>
+        <div><dt>Answer: LLM-field count (Q9)</dt><dd>{{ results.q9 }}</dd></div>
+        <div><dt>Answer: Difference</dt><dd>{{ results.q9_diff }}</dd></div>
+      </dl>
+    </article>
+  </div>
+
+  <h2>Original questions</h2>
+  <div class="grid">
+    <article class="card wide">
+      <h3>Q10 &middot; Acceptance rate by degree type</h3>
+      <p class="question">Do PhD applicants report a different acceptance rate than master's applicants? (degree types with at least 500 entries)</p>
+      <p class="label">Answer:</p>
+      <table>
+        <thead><tr><th>Degree</th><th class="num">Entries</th><th class="num">Acceptance %</th></tr></thead>
+        <tbody>
+        {% for degree, n, pct in results.q10 %}
+          <tr><td>{{ degree }}</td><td class="num">{{ n }}</td><td class="num">{{ pct }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </article>
+
+    <article class="card wide">
+      <h3>Q11 &middot; Most-reported universities for Fall 2026</h3>
+      <p class="question">Which ten universities have the most Fall 2026 entries, and what are their acceptance percentage and average reported GPA?</p>
+      <p class="label">Answer:</p>
+      <table>
+        <thead><tr><th>University</th><th class="num">Entries</th><th class="num">Acceptance %</th><th class="num">Avg GPA</th></tr></thead>
+        <tbody>
+        {% for uni, n, pct, gpa in results.q11 %}
+          <tr><td>{{ uni }}</td><td class="num">{{ n }}</td><td class="num">{{ pct }}</td><td class="num">{{ gpa }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </article>
+  </div>
+  {% endif %}
+
+  <footer>Data: self-reported Grad Cafe submissions scraped in Module 2. Read through SQLAlchemy ORM.</footer>
+</main>
+
+<script>
+  // Buttons call the JSON endpoints; the page reloads after a successful update.
+  (function () {
+    var flash = document.getElementById('flash');
+    var statusBox = document.getElementById('pull-status');
+    var pullBtn = document.getElementById('pull-data-btn');
+    var updateBtn = document.getElementById('update-analysis-btn');
+
+    function show(kind, text) {
+      flash.className = 'flash flash-' + kind;
+      flash.textContent = text;
+      flash.hidden = false;
+    }
+
+    function post(url) {
+      return fetch(url, { method: 'POST', headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); });
+    }
+
+    pullBtn.addEventListener('click', function () {
+      post('{{ url_for("pull_data") }}').then(function (res) {
+        if (res.status === 409) { show('warning', res.body.message); return; }
+        if (!res.body.ok) { show('warning', res.body.error || 'Pull failed.'); return; }
+        show('info', res.body.message);
+        pullBtn.disabled = true;
+        poll();
+      });
+    });
+
+    updateBtn.addEventListener('click', function () {
+      post('{{ url_for("update_analysis") }}').then(function (res) {
+        if (res.status === 409) { show('warning', res.body.message); return; }
+        if (!res.body.ok) { show('warning', res.body.error || 'Update failed.'); return; }
+        window.location.reload();
+      });
+    });
+
+    function poll() {
+      var timer = setInterval(function () {
+        fetch('{{ url_for("status") }}').then(function (r) { return r.json(); }).then(function (s) {
+          if (s.busy) {
+            statusBox.className = 'status status-running';
+            statusBox.innerHTML = '<strong>Retrieving new data&hellip;</strong> ' + s.message;
+          } else {
+            clearInterval(timer);
+            statusBox.className = 'status status-' + s.state;
+            statusBox.innerHTML = '<strong>Pull finished:</strong> ' + s.message +
+              ' <span class="muted">Click Update Analysis to refresh the numbers.</span>';
+            pullBtn.disabled = false;
+          }
+        }).catch(function () {});
+      }, 3000);
+    }
+
+    if (statusBox.classList.contains('status-running')) { poll(); }
+  })();
+</script>
+</body>
+</html>

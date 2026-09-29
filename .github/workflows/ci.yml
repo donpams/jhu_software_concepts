@@ -1,0 +1,99 @@
+name: ci
+
+# Module 5 "shift-left" pipeline: four independent jobs on every push / PR.
+on:
+  push:
+  pull_request:
+
+jobs:
+  # 1. Static analysis - the build fails if module_5/src scores below 10/10.
+  pylint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r module_5/requirements.txt
+      - name: Pylint (fail under 10)
+        working-directory: module_5
+        run: pylint --rcfile=.pylintrc --fail-under=10 src
+
+  # 2. Dependency graph - regenerated with pydeps + Graphviz; fails if the SVG is missing/empty.
+  dependency-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Graphviz
+        run: sudo apt-get update -q && sudo apt-get install -y -q graphviz
+      - name: Install dependencies
+        run: pip install -r module_5/requirements.txt
+      - name: Generate dependency.svg
+        working-directory: module_5/src
+        run: pydeps flask_app.py --noshow -T svg -o ../dependency.svg --max-bacon 2 --cluster
+      - name: Validate dependency.svg
+        working-directory: module_5
+        run: |
+          test -s dependency.svg || { echo "dependency.svg missing or empty"; exit 1; }
+          grep -q "flask_app" dependency.svg || { echo "dependency.svg does not describe flask_app"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-graph
+          path: module_5/dependency.svg
+
+  # 3. Supply-chain scan - Snyk open-source test against requirements.txt.
+  #    Needs the SNYK_TOKEN repository secret (Settings -> Secrets -> Actions).
+  #    The step always produces output; set continue-on-error to false to block on findings.
+  snyk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies (Snyk resolves the installed tree)
+        run: pip install -r module_5/requirements.txt
+      - name: Snyk open-source dependency test
+        uses: snyk/actions/python@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --file=module_5/requirements.txt --package-manager=pip --skip-unresolved
+
+  # 4. Tests - full marked suite with 100 % coverage against a PostgreSQL service.
+  pytest:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gradcafe_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gradcafe_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r module_5/requirements.txt
+      - name: Pytest with coverage (fails below 100 %)
+        run: pytest module_5/tests -m "web or buttons or analysis or db or integration"
